@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🛡️ Permission Escalation Firewall | Dashboard</title>
+  <meta name="description" content="Multi-Tenant SaaS Permission Escalation Firewall - Real-time authorization system dashboard">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen active">
+      <div class="login-container">
+        <div class="login-card glass">
+          <div class="login-header">
+            <div class="shield-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 2l8 4v6c0 5.25-3.5 10-8 11-4.5-1-8-5.75-8-11V6l8-4z"/>
+                <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <h1>Defense Firewall</h1>
+            <p class="subtitle">Air Force Operational Permission System</p>
+          </div>
+          <form id="login-form">
+            <div class="form-group">
+              <label for="login-username">Personnel ID (Username)</label>
+              <input type="text" id="login-username" placeholder="e.g. airman_smith, pilot_jones" autocomplete="off" required>
+            </div>
+            <div class="form-group">
+              <label for="login-password">Access Code (Password)</label>
+              <input type="password" id="login-password" placeholder="password123" value="password123" required>
+            </div>
+            <button type="submit" id="login-btn" class="btn btn-primary btn-full">
+              <span>Authenticate</span>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </button>
+            <div id="login-error" class="error-msg hidden"></div>
+          </form>
+          <div class="demo-accounts">
+            <p>Active Personnel <span class="badge">password123</span></p>
+            <div class="account-chips">
+              <button class="chip" data-user="airman_smith">airman_smith <span class="chip-role">Maintenance</span></button>
+              <button class="chip" data-user="pilot_jones">pilot_jones <span class="chip-role">Flight Ops</span></button>
+              <button class="chip" data-user="analyst_miller">analyst_miller <span class="chip-role">Intel</span></button>
+              <button class="chip" data-user="colonel_vance">colonel_vance <span class="chip-role">Command</span></button>
+              <button class="chip chip-alt" data-user="gdf_operator">gdf_operator <span class="chip-role">GDF Op</span></button>
+            </div>
+            <div class="tenant-labels">
+              <span class="tenant-label">US Air Force</span>
+              <span class="tenant-label alt">Global Defense Force</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard-screen" class="screen">
+      <!-- Top Navigation -->
+      <nav class="top-nav glass">
+        <div class="nav-left">
+          <div class="nav-logo">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2l8 4v6c0 5.25-3.5 10-8 11-4.5-1-8-5.75-8-11V6l8-4z"/>
+              <path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <span class="nav-title">Firewall Dashboard</span>
+        </div>
+        <div class="nav-right">
+          <div class="user-info">
+            <div class="user-avatar" id="nav-avatar">U</div>
+            <div class="user-details">
+              <span class="user-name" id="nav-username">User</span>
+              <span class="user-tenant" id="nav-tenant">Tenant</span>
+            </div>
+          </div>
+          <button id="logout-btn" class="btn btn-ghost" title="Sign Out">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+      </nav>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+          <button class="tab active" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="permissions">Permission Check</button>
+          <button class="tab" data-tab="graph">Role Graph</button>
+          <button class="tab" data-tab="audit">Audit Log</button>
+          <button class="tab" data-tab="firewall">Firewall Rules</button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+          <!-- Overview Tab -->
+          <section id="tab-overview" class="tab-panel active">
+            <div class="stats-grid">
+              <div class="stat-card glass" id="stat-permissions">
+                <div class="stat-icon" style="--accent: #6366f1">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                </div>
+                <div class="stat-value">-</div>
+                <div class="stat-label">Total Permissions</div>
+              </div>
+              <div class="stat-card glass" id="stat-direct">
+                <div class="stat-icon" style="--accent: #10b981">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                </div>
+                <div class="stat-value">-</div>
+                <div class="stat-label">Direct</div>
+              </div>
+              <div class="stat-card glass" id="stat-inherited">
+                <div class="stat-icon" style="--accent: #f59e0b">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                </div>
+                <div class="stat-value">-</div>
+                <div class="stat-label">Inherited</div>
+              </div>
+              <div class="stat-card glass" id="stat-risk">
+                <div class="stat-icon" style="--accent: #ef4444">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </div>
+                <div class="stat-value">-</div>
+                <div class="stat-label">Critical Access</div>
+              </div>
+            </div>
+
+            <div class="content-grid">
+              <div class="panel glass">
+                <h3 class="panel-title">Your Roles</h3>
+                <div id="user-roles-list" class="roles-list">Loading...</div>
+              </div>
+              <div class="panel glass">
+                <h3 class="panel-title">Permission Map</h3>
+                <div id="permission-map" class="perm-list">Loading...</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Permission Check Tab -->
+          <section id="tab-permissions" class="tab-panel">
+            <div class="check-container">
+              <div class="panel glass">
+                <h3 class="panel-title">🔍 Permission Access Check</h3>
+                <p class="panel-desc">Test if you can access a specific permission. The firewall will analyze the full role inheritance chain.</p>
+                <div class="check-form">
+                  <div class="form-group">
+                    <label>Select Permission to Test</label>
+                    <select id="perm-check-select" class="select">
+                      <option value="">Choose a permission...</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>Or enter custom permission</label>
+                    <input type="text" id="perm-check-custom" placeholder="e.g. admin:system" class="input">
+                  </div>
+                  <button id="perm-check-btn" class="btn btn-primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                    Run Analysis
+                  </button>
+                </div>
+              </div>
+              <div id="check-result" class="check-result hidden"></div>
+            </div>
+
+            <div class="panel glass mt-4">
+              <h3 class="panel-title">⚡ Quick Access Tests</h3>
+              <p class="panel-desc">Click to test firewall response for protected endpoints</p>
+              <div class="quick-tests">
+                <button class="test-btn" data-endpoint="/api/resource" data-method="GET">
+                  <span class="test-method get">GET</span>
+                  <span>/api/resource</span>
+                  <span class="test-perm">read:maintenance-logs</span>
+                </button>
+                <button class="test-btn" data-endpoint="/api/resource/analytics" data-method="GET">
+                  <span class="test-method post">GET</span>
+                  <span>/api/resource/analytics</span>
+                  <span class="test-perm">read:flight-schedules</span>
+                </button>
+                <button class="test-btn" data-endpoint="/api/resource/1" data-method="DELETE">
+                  <span class="test-method delete">DEL</span>
+                  <span>/api/resource/1</span>
+                  <span class="test-perm">monitor:surveillance</span>
+                </button>
+                <button class="test-btn" data-endpoint="/api/resource/admin" data-method="GET">
+                  <span class="test-method critical">GET</span>
+                  <span>/api/resource/admin</span>
+                  <span class="test-perm">read:intel-reports</span>
+                </button>
+              </div>
+              <div id="test-result" class="check-result hidden"></div>
+            </div>
+          </section>
+
+          <!-- Role Graph Tab -->
+          <section id="tab-graph" class="tab-panel">
+            <div class="panel glass">
+              <h3 class="panel-title">🔗 Role Hierarchy Graph</h3>
+              <p class="panel-desc">Visual representation of role inheritance chains in your tenant</p>
+              <div id="graph-container" class="graph-container">
+                <canvas id="role-graph-canvas"></canvas>
+              </div>
+              <div id="graph-legend" class="graph-legend"></div>
+            </div>
+          </section>
+
+          <!-- Audit Log Tab -->
+          <section id="tab-audit" class="tab-panel">
+            <div class="panel glass">
+              <div class="panel-header">
+                <h3 class="panel-title">📋 Audit Trail</h3>
+                <div class="audit-filters">
+                  <button class="filter-btn active" data-filter="all">All</button>
+                  <button class="filter-btn" data-filter="ALLOW">Allowed</button>
+                  <button class="filter-btn" data-filter="DENY">Denied</button>
+                </div>
+              </div>
+              <div id="audit-log-list" class="audit-list">Loading...</div>
+            </div>
+          </section>
+
+          <!-- Firewall Rules Tab -->
+          <section id="tab-firewall" class="tab-panel">
+            <div class="panel glass">
+              <h3 class="panel-title">🛡️ Active Firewall Rules</h3>
+              <p class="panel-desc">Rules that control permission escalation detection and blocking</p>
+              <div id="firewall-rules-list" class="rules-list">Loading...</div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+const express = require('express');
+const { v4: uuidv4 } = require('uuid');
+const { getConnection } = require('../database/connection');
+const { authenticate } = require('../middleware/auth');
+const { firewall } = require('../middleware/firewall');
+const PermissionGraph = require('../engine/permissionGraph');
+
+const router = express.Router();
+router.use(authenticate);
+
+// POST /api/permissions - Create permission
+router.post('/', firewall('manage:roles'), (req, res) => {
+  const { name, description, resource, action, riskLevel } = req.body;
+  if (!name || !resource || !action) {
+    return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'name, resource, and action are required.' });
+  }
+  const risk = riskLevel || 'low';
+  const db = getConnection();
+  const existing = db.prepare('SELECT id FROM permissions WHERE name = ?').get(name);
+  if (existing) return res.status(409).json({ error: 'PERMISSION_EXISTS', message: `Permission '${name}' already exists.` });
+
+  const id = uuidv4();
+  db.prepare('INSERT INTO permissions (id, name, description, resource, action, risk_level) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, description || null, resource, action, risk);
+  res.status(201).json({ message: `Permission '${name}' created.`, permission: { id, name, resource, action, riskLevel: risk } });
+});
+
+// GET /api/permissions - List all
+router.get('/', (req, res) => {
+  const db = getConnection();
+  const permissions = db.prepare(`
+    SELECT p.id, p.name, p.description, p.resource, p.action, p.risk_level,
+           COUNT(DISTINCT rp.role_id) as assigned_to_roles
+    FROM permissions p LEFT JOIN role_permissions rp ON p.id = rp.permission_id
+    GROUP BY p.id ORDER BY p.resource, p.action
+  `).all();
+  res.json({ permissions, count: permissions.length });
+});
+
+// POST /api/permissions/assign - Assign permission to role
+router.post('/assign', firewall('manage:roles'), (req, res) => {
+  const { roleId, permissionId } = req.body;
+  if (!roleId || !permissionId) return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'roleId and permissionId are required.' });
+
+  const db = getConnection();
+  const role = db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(roleId);
+  if (!role) return res.status(404).json({ error: 'ROLE_NOT_FOUND', message: 'Role does not exist.' });
+  if (role.tenant_id !== req.user.tenantId) return res.status(403).json({ error: 'CROSS_TENANT_VIOLATION', message: 'Cannot assign permissions to roles in a different tenant.' });
+
+  const permission = db.prepare('SELECT id, name FROM permissions WHERE id = ?').get(permissionId);
+  if (!permission) return res.status(404).json({ error: 'PERMISSION_NOT_FOUND', message: 'Permission does not exist.' });
+
+  const existing = db.prepare('SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?').get(roleId, permissionId);
+  if (existing) return res.status(409).json({ error: 'ALREADY_ASSIGNED', message: `Already assigned.` });
+
+  db.prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)').run(roleId, permissionId);
+  res.json({ message: `Permission '${permission.name}' assigned to role '${role.name}'.` });
+});
+
+// POST /api/permissions/check - Check access
+router.post('/check', (req, res) => {
+  const { permission, resourceTenantId } = req.body;
+  if (!permission) return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'permission name is required.' });
+
+  const engine = new PermissionGraph();
+  const result = engine.checkAccess(req.user.id, permission, resourceTenantId);
+  res.json({ check: { user: req.user.username, tenant: req.user.tenantName, permission, ...result } });
+});
+
+// GET /api/permissions/map - Full permission map
+router.get('/map', (req, res) => {
+  const engine = new PermissionGraph();
+  const permMap = engine.getUserPermissionMap(req.user.id);
+  if (!permMap) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+
+  const direct = permMap.permissions.filter(p => p.accessType === 'DIRECT');
+  const inherited = permMap.permissions.filter(p => p.accessType === 'INHERITED');
+
+  res.json({
+    user: permMap.user,
+    directRoles: permMap.directRoles,
+    summary: {
+      totalPermissions: permMap.permissions.length,
+      directPermissions: direct.length,
+      inheritedPermissions: inherited.length,
+      byRiskLevel: {
+        critical: permMap.permissions.filter(p => p.riskLevel === 'critical').length,
+        high: permMap.permissions.filter(p => p.riskLevel === 'high').length,
+        medium: permMap.permissions.filter(p => p.riskLevel === 'medium').length,
+        low: permMap.permissions.filter(p => p.riskLevel === 'low').length,
+      },
+    },
+    permissions: { direct, inherited },
+  });
+});
+
+module.exports = router;
