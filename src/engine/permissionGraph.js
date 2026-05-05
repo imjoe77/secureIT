@@ -30,22 +30,25 @@ class PermissionGraph {
    */
   buildRoleGraph(tenantId) {
     const graph = new Map();
+    console.log(`[PermissionGraph] Building graph for tenant: ${tenantId}`);
 
     // Get all roles for this tenant
     const roles = this.db.prepare(
-      'SELECT id FROM roles WHERE tenant_id = ?'
+      'SELECT id, name FROM roles WHERE tenant_id = ?'
     ).all(tenantId);
 
+    console.log(`[PermissionGraph] Roles found: ${roles.length}`);
     roles.forEach(r => graph.set(r.id, []));
 
-    // Get all hierarchy edges for this tenant's roles
+    // Get all hierarchy edges where the parent role belongs to this tenant
     const edges = this.db.prepare(`
       SELECT rh.parent_role_id, rh.child_role_id
       FROM role_hierarchy rh
-      JOIN roles r1 ON rh.parent_role_id = r1.id
-      JOIN roles r2 ON rh.child_role_id = r2.id
-      WHERE r1.tenant_id = ? AND r2.tenant_id = ?
-    `).all(tenantId, tenantId);
+      JOIN roles r ON rh.parent_role_id = r.id
+      WHERE r.tenant_id = ?
+    `).all(tenantId);
+
+    console.log(`[PermissionGraph] Edges found: ${edges.length}`);
 
     edges.forEach(e => {
       if (graph.has(e.parent_role_id)) {
@@ -483,17 +486,33 @@ class PermissionGraph {
       });
     }
 
+    const permissionsList = Array.from(allPermissions.entries()).map(([name, info]) => ({
+      name,
+      accessType: info.isDirect ? 'DIRECT' : 'INHERITED',
+      depth: info.depth,
+      path: info.path,
+      riskLevel: info.permission.risk_level,
+      sourceRole: info.sourceRole,
+    }));
+
     return {
       user: { id: user.id, username: user.username, tenantId: user.tenant_id },
       directRoles: directRoles.map(r => r.name),
-      permissions: Array.from(allPermissions.entries()).map(([name, info]) => ({
-        name,
-        accessType: info.isDirect ? 'DIRECT' : 'INHERITED',
-        depth: info.depth,
-        path: info.path,
-        riskLevel: info.permission.risk_level,
-        sourceRole: info.sourceRole,
-      })),
+      summary: {
+        totalPermissions: permissionsList.length,
+        directPermissions: permissionsList.filter(p => p.accessType === 'DIRECT').length,
+        inheritedPermissions: permissionsList.filter(p => p.accessType === 'INHERITED').length,
+        byRiskLevel: {
+          low: permissionsList.filter(p => p.riskLevel === 'low').length,
+          medium: permissionsList.filter(p => p.riskLevel === 'medium').length,
+          high: permissionsList.filter(p => p.riskLevel === 'high').length,
+          critical: permissionsList.filter(p => p.riskLevel === 'critical').length,
+        }
+      },
+      permissions: {
+        direct: permissionsList.filter(p => p.accessType === 'DIRECT'),
+        inherited: permissionsList.filter(p => p.accessType === 'INHERITED'),
+      },
     };
   }
 

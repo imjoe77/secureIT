@@ -40,6 +40,7 @@ const SCHEMA_SQL = `
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
+    level INTEGER NOT NULL DEFAULT 1,
     tenant_id TEXT NOT NULL,
     is_system_role INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -54,7 +55,7 @@ const SCHEMA_SQL = `
     description TEXT,
     resource TEXT NOT NULL,
     action TEXT NOT NULL,
-    risk_level TEXT DEFAULT 'low' CHECK(risk_level IN ('low', 'medium', 'high', 'critical')),
+    risk_level TEXT DEFAULT 'low',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 

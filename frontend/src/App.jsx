@@ -12,7 +12,7 @@ import {
   Menu, 
   X 
 } from 'lucide-react';
-import LandingPage from './pages/LandingPage';
+import DefLanding from './pages/DefLanding';
 import Dashboard from './pages/Dashboard';
 import RequestAccess from './pages/RequestAccess';
 import AuditLog from './pages/AuditLog';
@@ -136,7 +136,7 @@ function App() {
     <Router>
       <div className="min-h-screen">
         <Routes>
-          <Route path="/" element={<LandingPage setUser={setUser} />} />
+          <Route path="/" element={<DefLanding setUser={setUser} />} />
           <Route
             path="/*"
             element={

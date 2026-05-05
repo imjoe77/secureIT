@@ -68,29 +68,17 @@ router.post('/check', (req, res) => {
 
 // GET /api/permissions/map - Full permission map
 router.get('/map', (req, res) => {
-  const engine = new PermissionGraph();
-  const permMap = engine.getUserPermissionMap(req.user.id);
-  if (!permMap) return res.status(404).json({ error: 'USER_NOT_FOUND' });
+  try {
+    const engine = new PermissionGraph();
+    const permMap = engine.getUserPermissionMap(req.user.id);
+    if (!permMap) return res.status(404).json({ error: 'USER_NOT_FOUND' });
 
-  const direct = permMap.permissions.filter(p => p.accessType === 'DIRECT');
-  const inherited = permMap.permissions.filter(p => p.accessType === 'INHERITED');
-
-  res.json({
-    user: permMap.user,
-    directRoles: permMap.directRoles,
-    summary: {
-      totalPermissions: permMap.permissions.length,
-      directPermissions: direct.length,
-      inheritedPermissions: inherited.length,
-      byRiskLevel: {
-        critical: permMap.permissions.filter(p => p.riskLevel === 'critical').length,
-        high: permMap.permissions.filter(p => p.riskLevel === 'high').length,
-        medium: permMap.permissions.filter(p => p.riskLevel === 'medium').length,
-        low: permMap.permissions.filter(p => p.riskLevel === 'low').length,
-      },
-    },
-    permissions: { direct, inherited },
-  });
+    // The engine already provides categorized data and summary
+    res.json(permMap);
+  } catch (err) {
+    console.error('Permission Map Error:', err);
+    res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
 });
 
 module.exports = router;

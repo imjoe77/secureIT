@@ -131,11 +131,11 @@ const AuditLog = () => {
                     </td>
                     <td className="px-8 py-6 max-w-xs">
                       <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
-                        {log.access_path ? (
-                          JSON.parse(log.access_path).map((p, i) => (
+                        {log.escalation_path ? (
+                          JSON.parse(log.escalation_path).map((p, i) => (
                             <React.Fragment key={i}>
                               <span className="text-[10px] font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded">{p}</span>
-                              {i < JSON.parse(log.access_path).length - 1 && <span className="text-slate-800">→</span>}
+                              {i < JSON.parse(log.escalation_path).length - 1 && <span className="text-slate-800">→</span>}
                             </React.Fragment>
                           ))
                         ) : (

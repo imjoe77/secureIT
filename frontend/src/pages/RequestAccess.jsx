@@ -17,6 +17,7 @@ import { permissionApi } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const RequestAccess = ({ user }) => {
+  const [targetTenantId, setTargetTenantId] = useState('');
   const [permissions, setPermissions] = useState([]);
   const [selectedPerm, setSelectedPerm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +40,7 @@ const RequestAccess = ({ user }) => {
     setLoading(true);
     setResult(null);
     try {
-      const response = await permissionApi.checkAccess(selectedPerm);
+      const response = await permissionApi.checkAccess(selectedPerm, targetTenantId || null);
       setResult(response.data.check);
     } catch (err) {
       console.error(err);
@@ -93,6 +94,21 @@ const RequestAccess = ({ user }) => {
                   </select>
                   <Search className="absolute right-4 top-4 text-slate-500 pointer-events-none" size={20} />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target Tenant ID (Optional)</label>
+                <div className="relative">
+                  <input 
+                    type="text"
+                    value={targetTenantId}
+                    onChange={(e) => setTargetTenantId(e.target.value)}
+                    placeholder="Auto-detect (Current Tenant)"
+                    className="w-full bg-defense-900 border border-white/10 text-white p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-defense-primary/50 transition-all font-mono text-xs"
+                  />
+                  <Database className="absolute right-4 top-4 text-slate-500 pointer-events-none" size={20} />
+                </div>
+                <p className="text-[10px] text-slate-600 mt-2 italic">Leave blank to use your assigned command unit.</p>
               </div>
 
               <div className="p-4 bg-white/5 rounded-xl border border-white/5">

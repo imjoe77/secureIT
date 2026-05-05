@@ -7,10 +7,13 @@ import {
   CheckCircle2, 
   ChevronRight,
   ShieldAlert,
-  Info
+  Info,
+  FileText,
+  XCircle,
+  Lock
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { permissionApi } from '../services/api';
+import api, { permissionApi } from '../services/api';
 import { motion } from 'framer-motion';
 
 const StatCard = ({ icon: Icon, label, value, color }) => (
@@ -29,6 +32,8 @@ const Dashboard = ({ user }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [actionResult, setActionResult] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -72,6 +77,31 @@ const Dashboard = ({ user }) => {
     { label: 'Critical Area', value: summary.byRiskLevel?.critical || 0, icon: AlertTriangle, color: 'bg-defense-red' },
   ];
 
+  const testAction = async (action) => {
+    setActionLoading(true);
+    setActionResult(null);
+    try {
+      let response;
+      
+      switch(action) {
+        case 'VIEW':
+          response = await api.get('/resource/reports');
+          break;
+        case 'UPDATE':
+          response = await api.put('/resource/reports');
+          break;
+        case 'DELETE':
+          response = await api.delete('/resource/reports');
+          break;
+      }
+      setActionResult(response.data);
+    } catch (err) {
+      setActionResult(err.response?.data || { status: 'ERROR', reason: 'Connection Failure' });
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-12">
       <motion.div 
@@ -80,13 +110,105 @@ const Dashboard = ({ user }) => {
         className="flex items-center justify-between"
       >
         <div>
-          <h2 className="text-3xl font-black text-white tracking-tight">Personnel Status Board</h2>
-          <p className="text-slate-400 font-medium">Theater Operational Readiness Overview</p>
+          <h2 className="text-3xl font-black text-white tracking-tight">Strategic Defense Console</h2>
+          <p className="text-slate-400 font-medium">Theater Operational Readiness & Enforcement</p>
         </div>
         <div className="glass px-6 py-3 rounded-2xl border-defense-primary/30 flex items-center gap-3">
           <div className="w-2 h-2 bg-defense-green rounded-full animate-pulse" />
           <span className="text-xs font-black uppercase tracking-widest text-defense-green">System Live</span>
         </div>
+      </motion.div>
+
+      {/* Defense Operational Console */}
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass p-8 rounded-[40px] border-defense-primary/20 relative overflow-hidden"
+      >
+        <div className="absolute top-0 right-0 p-8 opacity-10">
+          <ShieldAlert size={120} />
+        </div>
+        
+        <h3 className="text-xl font-black text-white mb-6 uppercase tracking-widest flex items-center gap-3">
+          <Lock className="text-defense-primary" size={24} />
+          Operational Action Terminal
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <button 
+            onClick={() => testAction('VIEW')}
+            disabled={actionLoading}
+            className="flex flex-col items-center justify-center p-6 bg-defense-primary/10 border border-defense-primary/20 rounded-3xl hover:bg-defense-primary/20 transition-all group"
+          >
+            <div className="w-12 h-12 bg-defense-primary/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <FileText className="text-defense-primary" size={24} />
+            </div>
+            <span className="font-black text-white uppercase tracking-widest text-xs">View Intelligence</span>
+          </button>
+
+          <button 
+            onClick={() => testAction('UPDATE')}
+            disabled={actionLoading}
+            className="flex flex-col items-center justify-center p-6 bg-defense-yellow/10 border border-defense-yellow/20 rounded-3xl hover:bg-defense-yellow/20 transition-all group"
+          >
+            <div className="w-12 h-12 bg-defense-yellow/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <Activity className="text-defense-yellow" size={24} />
+            </div>
+            <span className="font-black text-white uppercase tracking-widest text-xs">Update Operationals</span>
+          </button>
+
+          <button 
+            onClick={() => testAction('DELETE')}
+            disabled={actionLoading}
+            className="flex flex-col items-center justify-center p-6 bg-defense-red/10 border border-defense-red/20 rounded-3xl hover:bg-defense-red/20 transition-all group"
+          >
+            <div className="w-12 h-12 bg-defense-red/20 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+              <ShieldAlert className="text-defense-red" size={24} />
+            </div>
+            <span className="font-black text-white uppercase tracking-widest text-xs">Purge Archives</span>
+          </button>
+        </div>
+
+        {actionResult && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            className={`p-6 rounded-3xl border ${
+              actionResult.status === 'ALLOWED' 
+                ? 'bg-defense-green/10 border-defense-green/20' 
+                : 'bg-defense-red/10 border-defense-red/20'
+            }`}
+          >
+            <div className="flex items-start gap-4">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                actionResult.status === 'ALLOWED' ? 'bg-defense-green/20' : 'bg-defense-red/20'
+              }`}>
+                {actionResult.status === 'ALLOWED' ? (
+                  <CheckCircle2 className="text-defense-green" size={20} />
+                ) : (
+                  <XCircle className="text-defense-red" size={20} />
+                )}
+              </div>
+              <div>
+                <h4 className={`text-sm font-black uppercase tracking-widest mb-1 ${
+                  actionResult.status === 'ALLOWED' ? 'text-defense-green' : 'text-defense-red'
+                }`}>
+                  Action {actionResult.status}
+                </h4>
+                <p className="text-white font-bold text-lg">{actionResult.reason || actionResult.message}</p>
+                {actionResult.data && (
+                  <div className="mt-4 grid grid-cols-1 gap-2">
+                    {actionResult.data.map(item => (
+                      <div key={item.id} className="text-xs bg-white/5 p-2 rounded-lg text-slate-400 font-mono">
+                        [{item.id}] {item.title} - {item.classification}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
