@@ -32,6 +32,7 @@ export const roleApi = {
 
 export const auditApi = {
   getLogs: (filter) => api.get(`/audit/logs${filter ? `?decision=${filter}` : ''}`),
+  clearLogs: () => api.delete('/audit/logs'),
   getFirewallRules: () => api.get('/firewall/rules'),
 };
 

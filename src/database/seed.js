@@ -58,13 +58,19 @@ async function seed() {
   const getR = (n) => roles.find(r => r.name === n).id;
 
   const mapping = [
-    // Soldier gets the dangerous permission directly
+    // Soldier: Tactical viewing only
     { rid: getR('Soldier'),   pid: getP('VIEW_REPORTS') },
-    { rid: getR('Soldier'),   pid: getP('DELETE_REPORTS') }, // <--- HIGH RISK PERM
     
-    // Higher roles only get basic permissions directly
+    // Officer: Field management
     { rid: getR('Officer'),   pid: getP('VIEW_REPORTS') },
+    { rid: getR('Officer'),   pid: getP('UPDATE_REPORTS') },
+    
+    // Colonel: Regional authority (Can Delete)
     { rid: getR('Colonel'),   pid: getP('VIEW_REPORTS') },
+    { rid: getR('Colonel'),   pid: getP('UPDATE_REPORTS') },
+    { rid: getR('Colonel'),   pid: getP('DELETE_REPORTS') }, // <--- HIGH RISK (Direct)
+    
+    // Brigadier: Supreme oversight
     { rid: getR('Brigadier'), pid: getP('VIEW_REPORTS') },
     { rid: getR('Brigadier'), pid: getP('UPDATE_REPORTS') },
   ];

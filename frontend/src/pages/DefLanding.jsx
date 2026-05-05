@@ -5,9 +5,9 @@ import { authApi } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function LoginPage({ setUser }) {
-    const [username, setUsername] = useState('');
+    const [username, setUsername] = useState(localStorage.getItem('secureit_last_user') || '');
     const [password, setPassword] = useState('');
-    const [role, setRole] = useState('Soldier');
+    const [role, setRole] = useState(localStorage.getItem('secureit_last_role') || 'Soldier');
     const [status, setStatus] = useState('idle'); 
     const [error, setError] = useState(null);
     const navigate = useNavigate();
@@ -39,6 +39,8 @@ export default function LoginPage({ setUser }) {
                 localStorage.setItem('secureit_token', response.data.token);
                 localStorage.setItem('secureit_user', JSON.stringify(response.data.user));
                 localStorage.setItem('secureit_role', role);
+                localStorage.setItem('secureit_last_user', username);
+                localStorage.setItem('secureit_last_role', role);
                 
                 if (setUser) setUser(response.data.user);
                 
@@ -114,10 +116,10 @@ export default function LoginPage({ setUser }) {
                                         disabled={status === 'checking'}
                                         className="w-full bg-white/5 border border-white/10 text-white p-4 rounded-2xl appearance-none focus:outline-none focus:border-defense-primary transition-colors cursor-pointer font-bold text-sm"
                                     >
-                                        <option value="Soldier">Soldier (Level 1)</option>
-                                        <option value="Officer">Officer (Level 3)</option>
-                                        <option value="Colonel">Colonel (Level 6)</option>
-                                        <option value="Brigadier">Brigadier (Level 10)</option>
+                                        <option value="Soldier" className="bg-slate-900 text-white">Soldier (Level 1)</option>
+                                        <option value="Officer" className="bg-slate-900 text-white">Officer (Level 3)</option>
+                                        <option value="Colonel" className="bg-slate-900 text-white">Colonel (Level 6)</option>
+                                        <option value="Brigadier" className="bg-slate-900 text-white">Brigadier (Level 10)</option>
                                     </select>
                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500">
                                         <Activity size={18} />

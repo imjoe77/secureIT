@@ -14,11 +14,38 @@
  *   - Return detailed explainable allow/deny decisions
  */
 
+const { v4: uuidv4 } = require('uuid');
 const { getConnection } = require('../database/connection');
 
 class PermissionGraph {
   constructor() {
     this.db = getConnection();
+  }
+
+  /**
+   * Persist a security decision to the audit log.
+   */
+  recordAuditLog(userId, tenantId, permission, decision, reason, path = [], code = null) {
+    try {
+      const id = uuidv4();
+      this.db.prepare(`
+        INSERT INTO audit_log (
+          id, user_id, tenant_id, requested_permission, 
+          decision, reason, escalation_path, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, 
+        userId, 
+        tenantId, 
+        permission, 
+        decision, 
+        reason, 
+        JSON.stringify(path),
+        new Date().toISOString()
+      );
+    } catch (err) {
+      console.error('Failed to record audit log:', err.message);
+    }
   }
 
   /**
@@ -244,10 +271,13 @@ class PermissionGraph {
       const userTenant = this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(user.tenant_id);
       const resTenant = this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(resourceTenantId);
 
-      return this._deny('CROSS_TENANT_VIOLATION',
-        `Cross-tenant access blocked: User '${user.username}' belongs to '${userTenant?.name || 'Unknown'}' ` +
+      const reason = `Cross-tenant access blocked: User '${user.username}' belongs to '${userTenant?.name || 'Unknown'}' ` +
         `but attempted to access resource in '${resTenant?.name || 'Unknown'}'. ` +
-        `Tenant boundary violation detected.`,
+        `Tenant boundary violation detected.`;
+      
+      this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', reason, [], 'CROSS_TENANT_VIOLATION');
+
+      return this._deny('CROSS_TENANT_VIOLATION', reason,
         {
           userId: user.id,
           username: user.username,
@@ -320,6 +350,7 @@ class PermissionGraph {
     if (!allPermissions.has(requestedPermission)) {
       // Collect all available permissions for helpful message
       const availablePerms = Array.from(allPermissions.keys()).sort();
+      this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', 'Permission not found in user hierarchy.', [], 'PERMISSION_NOT_FOUND');
       return this._deny('PERMISSION_NOT_FOUND',
         `Access denied: User '${user.username}' does not have permission '${requestedPermission}'. ` +
         `This permission is not reachable through any assigned role or role inheritance chain.`,
@@ -343,6 +374,8 @@ class PermissionGraph {
 
     // ─── Step 9: Allow with full details ─────────────────────
     const elapsed = Date.now() - startTime;
+    
+    this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'ALLOW', permAccess.isDirect ? 'Direct access' : 'Inherited access', permAccess.path);
 
     return {
       decision: 'ALLOW',
@@ -384,17 +417,19 @@ class PermissionGraph {
       switch (rule.rule_type) {
         case 'block_indirect': {
           // Block indirect access to high-risk permissions beyond a certain depth
-          if (!permAccess.isDirect &&
+              if (!permAccess.isDirect &&
               config.risk_levels.includes(permAccess.permission.risk_level) &&
               permAccess.depth > config.max_depth) {
-            return this._deny('INDIRECT_ESCALATION_BLOCKED',
-              `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+            const reason = `🛡️ Firewall Rule "${rule.name}" triggered: ` +
               `Permission '${permAccess.permission.name}' (risk: ${permAccess.permission.risk_level}) ` +
               `was reached via indirect inheritance at depth ${permAccess.depth} ` +
               `(max allowed: ${config.max_depth}). ` +
               `Escalation path: ${permAccess.path.join(' → ')}. ` +
-              `This may indicate an unintended privilege escalation.`,
-              {
+              `This may indicate an unintended privilege escalation.`;
+            
+            this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, permAccess.path, 'INDIRECT_ESCALATION_BLOCKED');
+
+            return this._deny('INDIRECT_ESCALATION_BLOCKED', reason, {
                 userId: user.id,
                 username: user.username,
                 rule: rule.name,

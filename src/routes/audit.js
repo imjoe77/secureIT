@@ -47,6 +47,13 @@ router.get('/logs', (req, res) => {
   res.json({ logs, total: total.count, limit, offset });
 });
 
+// DELETE /api/audit/logs
+router.delete('/logs', (req, res) => {
+  const db = getConnection();
+  db.prepare('DELETE FROM audit_log WHERE tenant_id = ?').run(req.user.tenantId);
+  res.json({ message: 'Audit logs purged successfully.' });
+});
+
 // GET /api/audit/stats
 router.get('/stats', (req, res) => {
   const db = getConnection();

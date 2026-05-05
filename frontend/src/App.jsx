@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import DefLanding from './pages/DefLanding';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import RequestAccess from './pages/RequestAccess';
 import AuditLog from './pages/AuditLog';
 import RoleGraph from './pages/RoleGraph';
@@ -25,10 +26,10 @@ const Navbar = ({ user, onLogout }) => {
 
   const links = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Command Center', path: '/admin', icon: ShieldAlert },
     { name: 'Request Access', path: '/request', icon: Lock },
     { name: 'Audit Logs', path: '/logs', icon: FileText },
     { name: 'Role Graph', path: '/graph', icon: Network },
-    { name: 'Alerts', path: '/alerts', icon: ShieldAlert },
   ];
 
   return (
@@ -146,6 +147,7 @@ function App() {
                   <div className="max-w-7xl mx-auto px-6">
                     <Routes>
                       <Route path="/dashboard" element={<Dashboard user={user} />} />
+                      <Route path="/admin" element={<AdminDashboard />} />
                       <Route path="/request" element={<RequestAccess user={user} />} />
                       <Route path="/logs" element={<AuditLog />} />
                       <Route path="/graph" element={<RoleGraph />} />
