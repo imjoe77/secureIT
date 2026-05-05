@@ -92,7 +92,7 @@ async function seed() {
       type: 'block_indirect',
       config: JSON.stringify({
         risk_levels: ['high', 'critical'],
-        max_depth: 1
+        max_depth: 0
       }),
       tenant_id: sdc.id
     }
