@@ -24,7 +24,7 @@ async function seed() {
   db.exec(`
     DELETE FROM audit_log; DELETE FROM firewall_rules; DELETE FROM role_hierarchy;
     DELETE FROM role_permissions; DELETE FROM user_roles; DELETE FROM permissions;
-    DELETE FROM roles; DELETE FROM users; DELETE FROM tenants;
+    DELETE FROM roles; DELETE FROM users; DELETE FROM tenants; DELETE FROM trusted_devices;
   `);
 
   // TENANTS
@@ -50,6 +50,7 @@ async function seed() {
     { id: uuidv4(), name: 'Officer',   level: 3,  desc: 'Level 3: Field Commander' },
     { id: uuidv4(), name: 'Colonel',   level: 6,  desc: 'Level 6: Regional Strategist' },
     { id: uuidv4(), name: 'Brigadier', level: 10, desc: 'Level 10: Supreme Command' },
+    { id: uuidv4(), name: 'Strategic_Admin', level: 11, desc: 'Level 11: HQ Strategic Oversight' },
   ];
   roles.forEach(r => db.prepare('INSERT INTO roles (id, name, level, description, tenant_id) VALUES (?, ?, ?, ?, ?)').run(r.id, r.name, r.level, r.desc, sdc.id));
 
@@ -101,9 +102,53 @@ async function seed() {
         max_depth: 0
       }),
       tenant_id: sdc.id
+    },
+    {
+      id: uuidv4(),
+      name: 'Strategic Command Lockdown',
+      desc: 'Brigadier role restricted to verified Secure Terminals — only pre-registered device IPs can authenticate. Remote/unknown devices are blocked at login.',
+      type: 'device_lockdown',
+      config: JSON.stringify({
+        restricted_roles: ['Brigadier'],
+        enforce_at_login: true
+      }),
+      tenant_id: sdc.id
     }
   ];
   firewallRules.forEach(r => db.prepare('INSERT INTO firewall_rules (id, name, description, rule_type, config, tenant_id) VALUES (?, ?, ?, ?, ?, ?)').run(r.id, r.name, r.desc, r.type, r.config, r.tenant_id));
+
+  // TRUSTED DEVICES — Pre-registered device IPs for Brigadier access
+  // Only these IPs can authenticate as Brigadier (Zero-Trust Device Lockdown)
+  console.log('🔐 Registering Trusted Devices for Supreme Command...');
+  const trustedDevices = [
+    {
+      id: uuidv4(),
+      device_name: 'Secure Command Terminal Alpha',
+      ip_address: '127.0.0.1',
+      role_id: getR('Brigadier'),
+      tenant_id: sdc.id
+    },
+    {
+      id: uuidv4(),
+      device_name: 'Secure Command Terminal Alpha (IPv6)',
+      ip_address: '::1',
+      role_id: getR('Brigadier'),
+      tenant_id: sdc.id
+    },
+    {
+      id: uuidv4(),
+      device_name: 'Secure Command Terminal Alpha (IPv6-mapped)',
+      ip_address: '::ffff:127.0.0.1',
+      role_id: getR('Brigadier'),
+      tenant_id: sdc.id
+    }
+  ];
+  trustedDevices.forEach(d => {
+    db.prepare('INSERT INTO trusted_devices (id, device_name, ip_address, role_id, tenant_id) VALUES (?, ?, ?, ?, ?)').run(
+      d.id, d.device_name, d.ip_address, d.role_id, d.tenant_id
+    );
+    console.log(`   ✅ Registered: ${d.device_name} [${d.ip_address}]`);
+  });
 
   // USERS
   const hash = bcrypt.hashSync('password123', 10);
@@ -112,6 +157,7 @@ async function seed() {
     { id: uuidv4(), username: 'officer_user',   role: 'Officer' },
     { id: uuidv4(), username: 'colonel_user',   role: 'Colonel' },
     { id: uuidv4(), username: 'brigadier_user', role: 'Brigadier' },
+    { id: uuidv4(), username: 'hq_admin', role: 'Strategic_Admin' },
   ];
 
   users.forEach(u => {

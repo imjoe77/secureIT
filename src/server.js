@@ -18,13 +18,20 @@ async function startServer() {
   db.save();
 
   const app = express();
-  const PORT = 5000;
+  const PORT = process.env.PORT || 5000;
 
   // Middleware
-  app.use(cors());
+  app.set('trust proxy', true); // Enable IP resolution for device lockdown
+  app.use(cors({
+    origin: true,
+    credentials: true,
+  }));
   app.use(express.json());
   app.use(morgan('dev'));
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  
+  // Serve static files from the frontend build directory
+  const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
+  app.use(express.static(frontendPath));
 
   // API Routes
   app.use('/api/auth', require('./routes/auth'));
@@ -52,10 +59,10 @@ async function startServer() {
 
   // SPA catch-all
   app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
-      res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-    } else {
+    if (req.path.startsWith('/api')) {
       res.status(404).json({ error: 'NOT_FOUND', message: 'API endpoint not found.' });
+    } else {
+      res.sendFile(path.join(frontendPath, 'index.html'));
     }
   });
 
@@ -65,13 +72,13 @@ async function startServer() {
     res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
   });
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '127.0.0.1', () => {
     console.log('\n══════════════════════════════════════════════════════');
     console.log('  🛡️  Permission Escalation Firewall');
     console.log('══════════════════════════════════════════════════════');
-    console.log(`  🌐 Server:     http://localhost:${PORT}`);
-    console.log(`  📊 Dashboard:  http://localhost:${PORT}`);
-    console.log(`  💚 Health:     http://localhost:${PORT}/api/health`);
+    console.log(`  🌐 Server:     http://127.0.0.1:${PORT}`);
+    console.log(`  📊 Dashboard:  http://127.0.0.1:${PORT}`);
+    console.log(`  💚 Health:     http://127.0.0.1:${PORT}/api/health`);
     console.log('══════════════════════════════════════════════════════\n');
   });
 }

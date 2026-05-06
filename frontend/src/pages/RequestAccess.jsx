@@ -8,15 +8,12 @@ import {
   ShieldAlert, 
   ArrowRight,
   RefreshCw,
-  Eye,
-  Settings,
-  Database,
-  Radio
+  Database
 } from 'lucide-react';
 import { permissionApi } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const RequestAccess = ({ user }) => {
+const RequestAccess = () => {
   const [targetTenantId, setTargetTenantId] = useState('');
   const [permissions, setPermissions] = useState([]);
   const [selectedPerm, setSelectedPerm] = useState('');
@@ -51,15 +48,6 @@ const RequestAccess = ({ user }) => {
       }
     } finally {
       setLoading(false);
-    }
-  };
-
-  const getRiskColor = (risk) => {
-    switch (risk) {
-      case 'critical': return 'text-defense-red';
-      case 'high': return 'text-orange-500';
-      case 'medium': return 'text-defense-yellow';
-      default: return 'text-defense-green';
     }
   };
 

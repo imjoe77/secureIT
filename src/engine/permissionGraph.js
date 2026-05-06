@@ -241,9 +241,10 @@ class PermissionGraph {
    * @param {string} userId - The user requesting access
    * @param {string} requestedPermission - The permission name being requested
    * @param {string} resourceTenantId - The tenant of the resource being accessed (optional)
+   * @param {object} context - Additional request context (ip, deviceId, etc.)
    * @returns {AccessDecision}
    */
-  checkAccess(userId, requestedPermission, resourceTenantId = null) {
+  checkAccess(userId, requestedPermission, resourceTenantId = null, context = {}) {
     const startTime = Date.now();
 
     // ─── Step 1: Validate user ───────────────────────────────
@@ -367,7 +368,7 @@ class PermissionGraph {
     const permAccess = allPermissions.get(requestedPermission);
 
     // ─── Step 8: Apply firewall rules ────────────────────────
-    const firewallResult = this._applyFirewallRules(user, permAccess, allPermissions);
+    const firewallResult = this._applyFirewallRules(user, permAccess, allPermissions, context);
     if (firewallResult) {
       return firewallResult;
     }
@@ -406,7 +407,7 @@ class PermissionGraph {
    * Apply configurable firewall rules to determine if an otherwise-allowed
    * permission should be blocked.
    */
-  _applyFirewallRules(user, permAccess, allPermissions) {
+  _applyFirewallRules(user, permAccess, allPermissions, context = {}) {
     const rules = this.db.prepare(
       `SELECT * FROM firewall_rules WHERE is_active = 1 AND (tenant_id IS NULL OR tenant_id = ?)`
     ).all(user.tenant_id);
@@ -415,6 +416,30 @@ class PermissionGraph {
       const config = JSON.parse(rule.config);
 
       switch (rule.rule_type) {
+        case 'device_lockdown': {
+          // Block high-command access from unverified IPs/devices
+          if (config.restricted_roles && 
+              config.restricted_roles.includes(permAccess.sourceRole) &&
+              context.ip && 
+              !config.allowed_ips.includes(context.ip)) {
+            
+            const reason = `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+              `High-Command access from Unverified Device detected. ` +
+              `Device IP [${context.ip}] is not in the trusted registry for role '${permAccess.sourceRole}'.`;
+            
+            this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, [], 'DEVICE_LOCKDOWN_VIOLATION');
+
+            return this._deny('DEVICE_LOCKDOWN_VIOLATION', reason, {
+              userId: user.id,
+              username: user.username,
+              ip: context.ip,
+              rule: rule.name,
+              role: permAccess.sourceRole
+            });
+          }
+          break;
+        }
+
         case 'block_indirect': {
           // Block indirect access to high-risk permissions beyond a certain depth
               if (!permAccess.isDirect &&
@@ -495,6 +520,84 @@ class PermissionGraph {
       reason,
       ...details,
       timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Simulate granting a role to a user and calculate the risk.
+   * This is a read-only computation that predicts security impact.
+   */
+  simulateUserGrant(userId, hypotheticalRoleId) {
+    const user = this.db.prepare('SELECT id, username, tenant_id FROM users WHERE id = ?').get(userId);
+    const role = this.db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(hypotheticalRoleId);
+
+    if (!user || !role) throw new Error('User or Role not found');
+    if (user.tenant_id !== role.tenant_id) throw new Error('Cross-tenant simulation forbidden');
+
+    // 1. Get current state
+    const currentMap = this.getUserPermissionMap(userId);
+    const currentPerms = new Set([
+      ...currentMap.permissions.direct.map(p => p.name),
+      ...currentMap.permissions.inherited.map(p => p.name)
+    ]);
+
+    // 2. Build projected state (add hypothetical role to user's direct roles)
+    const projectedRoles = this.getUserDirectRoles(userId);
+    projectedRoles.push({ id: role.id, name: role.name, tenant_id: role.tenant_id });
+
+    const roleGraph = this.buildRoleGraph(user.tenant_id);
+    const allPermissions = new Map();
+
+    for (const r of projectedRoles) {
+      const rolePerms = this.bfsTraversePermissions(r.id, roleGraph);
+      rolePerms.forEach((value, key) => {
+        // Keep the path with the lowest depth (strongest access)
+        if (!allPermissions.has(key) || value.depth < allPermissions.get(key).depth) {
+          allPermissions.set(key, value);
+        }
+      });
+    }
+
+    const projectedPermissions = Array.from(allPermissions.entries()).map(([name, info]) => ({
+      name,
+      accessType: info.isDirect ? 'DIRECT' : 'INHERITED',
+      depth: info.depth,
+      path: info.path,
+      riskLevel: info.permission.risk_level,
+    }));
+
+    // 3. Analyze the Diff
+    const newPermissions = projectedPermissions.filter(p => !currentPerms.has(p.name));
+    
+    // Detect new escalation chains (High/Critical perms gained via inheritance)
+    const newChains = newPermissions.filter(p => 
+      p.depth > 0 && (p.riskLevel === 'high' || p.riskLevel === 'critical')
+    );
+
+    // 4. Calculate Risk Score
+    let riskScore = 'Low';
+    let riskReason = 'No sensitive permissions gained via indirect paths.';
+
+    if (newChains.length > 0) {
+      riskScore = 'Critical';
+      riskReason = `Granting this role would create ${newChains.length} high-risk escalation chains through inheritance.`;
+    } else if (newPermissions.some(p => p.riskLevel === 'high' || p.riskLevel === 'critical')) {
+      riskScore = 'Medium';
+      riskReason = 'User will gain direct access to sensitive permissions.';
+    } else if (newPermissions.length > 0) {
+      riskScore = 'Low';
+      riskReason = 'User will gain basic operational permissions.';
+    }
+
+    return {
+      targetUser: user.username,
+      targetRole: role.name,
+      currentPermissionCount: currentPerms.size,
+      projectedPermissionCount: projectedPermissions.length,
+      newPermissions,
+      newChains,
+      riskScore,
+      riskReason
     };
   }
 

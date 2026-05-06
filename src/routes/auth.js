@@ -58,14 +58,102 @@ router.post('/login', (req, res) => {
     });
   }
 
-  const token = generateToken(user.id, user.tenant_id);
-
   // Get user's roles
   const roles = db.prepare(`
-    SELECT r.name FROM roles r
+    SELECT r.id, r.name, r.level FROM roles r
     JOIN user_roles ur ON r.id = ur.role_id
     WHERE ur.user_id = ?
   `).all(user.id);
+
+  // ═══════════════════════════════════════════════════
+  //  ZERO-TRUST DEVICE LOCKDOWN — Enforced at Login
+  // ═══════════════════════════════════════════════════
+  // Check if any of the user's roles are restricted by device_lockdown rules.
+  // If so, verify the requesting device's IP against the trusted_devices registry.
+  const deviceLockdownRules = db.prepare(`
+    SELECT * FROM firewall_rules 
+    WHERE rule_type = 'device_lockdown' AND is_active = 1 
+    AND (tenant_id IS NULL OR tenant_id = ?)
+  `).all(user.tenant_id);
+
+  for (const rule of deviceLockdownRules) {
+    const config = JSON.parse(rule.config);
+    const restrictedRoles = config.restricted_roles || [];
+    
+    // Check if user holds any restricted role
+    const matchedRole = roles.find(r => restrictedRoles.includes(r.name));
+    if (!matchedRole) continue;
+
+    // User holds a restricted role — enforce device verification
+    // Extract the client IP address
+    const clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+    
+    // Normalize IPv6-mapped IPv4 addresses for consistent matching
+    const normalizedIp = clientIp.replace(/^::ffff:/, '');
+    
+    // Look up the requesting IP in the trusted_devices registry
+    const trustedDevice = db.prepare(`
+      SELECT * FROM trusted_devices 
+      WHERE role_id = ? AND is_active = 1 
+      AND (ip_address = ? OR ip_address = ? OR ip_address = ?)
+    `).get(matchedRole.id, clientIp, normalizedIp, `::ffff:${normalizedIp}`);
+
+    if (!trustedDevice) {
+      // BLOCKED: Unregistered device attempting high-command access
+      // Log the blocked attempt to the audit trail
+      db.prepare(`
+        INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        uuidv4(),
+        user.id,
+        user.tenant_id,
+        'LOGIN_DEVICE_LOCKDOWN',
+        'DENY',
+        `🛡️ DEVICE LOCKDOWN: Login attempt for role '${matchedRole.name}' blocked. ` +
+        `Device IP [${clientIp}] is NOT in the trusted device registry. ` +
+        `Only pre-registered Secure Command Terminals can access this role. ` +
+        `Firewall Rule: "${rule.name}".`,
+        clientIp,
+        new Date().toISOString()
+      );
+
+      return res.status(403).json({
+        error: 'DEVICE_LOCKDOWN_VIOLATION',
+        message: `🛡️ REMOTE ACCESS BLOCKED — Device IP [${clientIp}] is not registered as a trusted Secure Command Terminal for role '${matchedRole.name}'. Only pre-authorized devices can access supreme command. Contact your security administrator to register this device.`,
+        details: {
+          detectedIp: clientIp,
+          restrictedRole: matchedRole.name,
+          firewallRule: rule.name,
+          resolution: 'Register this device IP in the Trusted Devices Registry via admin panel.'
+        }
+      });
+    }
+
+    // Device verified — update last_used_at timestamp
+    db.prepare('UPDATE trusted_devices SET last_used_at = ? WHERE id = ?')
+      .run(new Date().toISOString(), trustedDevice.id);
+
+    // LOG SUCCESS: Record that the device check passed
+    db.prepare(`
+      INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      uuidv4(),
+      user.id,
+      user.tenant_id,
+      'LOGIN_DEVICE_VERIFIED',
+      'ALLOW',
+      `🔐 ZERO-TRUST PASSED: Authenticated via Trusted Terminal [${trustedDevice.device_name}]. ` +
+      `Identity verified for restricted role '${matchedRole.name}'.`,
+      clientIp,
+      new Date().toISOString()
+    );
+    
+    console.log(`🔐 Device Lockdown PASSED: ${trustedDevice.device_name} [${clientIp}] verified for ${matchedRole.name}`);
+  }
+
+  const token = generateToken(user.id, user.tenant_id);
 
   res.json({
     message: `Welcome back, ${user.username}!`,

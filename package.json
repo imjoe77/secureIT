@@ -4,10 +4,11 @@
   "description": "Multi-Tenant SaaS Permission Escalation Firewall - Real-time authorization system that prevents indirect privilege escalation",
   "main": "src/server.js",
   "scripts": {
+    "build": "npm install && npm install --prefix frontend && npm run build --prefix frontend",
+    "start": "node src/database/setup.js && node src/database/seed.js && node src/server.js",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "nodemon src/server.js",
     "dev:client": "npm run dev --prefix frontend",
-    "start": "node src/server.js",
     "db:setup": "node src/database/setup.js",
     "db:seed": "node src/database/seed.js",
     "db:reset": "node src/database/setup.js && node src/database/seed.js"

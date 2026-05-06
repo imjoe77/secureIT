@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Network, Info, Zap, Shield } from 'lucide-react';
 import { roleApi } from '../services/api';
-import { motion } from 'framer-motion';
 
 const RoleGraph = () => {
   const [data, setData] = useState(null);

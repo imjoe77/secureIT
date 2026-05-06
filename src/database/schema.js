@@ -112,11 +112,28 @@ const SCHEMA_SQL = `
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    rule_type TEXT NOT NULL CHECK(rule_type IN ('block_indirect', 'block_cross_tenant', 'max_depth', 'block_permission')),
+    rule_type TEXT NOT NULL CHECK(rule_type IN ('block_indirect', 'block_cross_tenant', 'max_depth', 'block_permission', 'device_lockdown')),
     config TEXT NOT NULL,
     tenant_id TEXT,
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+  );
+
+  -- Trusted Devices Registry (Zero-Trust Device Lockdown)
+  -- Pre-approved device IPs for restricted high-command roles.
+  -- Only devices with matching IPs can authenticate as these roles.
+  CREATE TABLE IF NOT EXISTS trusted_devices (
+    id TEXT PRIMARY KEY,
+    device_name TEXT NOT NULL,
+    ip_address TEXT NOT NULL,
+    role_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    registered_by TEXT,
+    registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used_at DATETIME,
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   );
 
@@ -131,6 +148,8 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
   CREATE INDEX IF NOT EXISTS idx_audit_log_tenant ON audit_log(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_trusted_devices_role ON trusted_devices(role_id);
+  CREATE INDEX IF NOT EXISTS idx_trusted_devices_ip ON trusted_devices(ip_address);
 `;
 
 module.exports = { SCHEMA_SQL };

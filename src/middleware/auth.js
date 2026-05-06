@@ -78,6 +78,32 @@ function authenticate(req, res, next) {
 }
 
 /**
+ * Middleware: Verify if user has Admin (Brigadier) status.
+ */
+function isAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  
+  const db = getConnection();
+  const roles = db.prepare(`
+    SELECT r.name, r.level 
+    FROM roles r
+    JOIN user_roles ur ON r.id = ur.role_id
+    WHERE ur.user_id = ?
+  `).all(req.user.id);
+
+  const isBrigadier = roles.some(r => r.name === 'Brigadier' || r.level >= 10);
+  
+  if (!isBrigadier) {
+    return res.status(403).json({
+      error: 'ADMIN_ACCESS_REQUIRED',
+      message: 'Supreme command clearance (Brigadier level 10) required for this operation.',
+    });
+  }
+
+  next();
+}
+
+/**
  * Generate a JWT token for a user.
  */
 function generateToken(userId, tenantId) {
@@ -88,4 +114,4 @@ function generateToken(userId, tenantId) {
   );
 }
 
-module.exports = { authenticate, generateToken, JWT_SECRET };
+module.exports = { authenticate, isAdmin, generateToken, JWT_SECRET };

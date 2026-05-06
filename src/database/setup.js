@@ -16,6 +16,7 @@ async function setup() {
   db.exec(`
     DROP TABLE IF EXISTS audit_log;
     DROP TABLE IF EXISTS firewall_rules;
+    DROP TABLE IF EXISTS trusted_devices;
     DROP TABLE IF EXISTS role_hierarchy;
     DROP TABLE IF EXISTS role_permissions;
     DROP TABLE IF EXISTS user_roles;

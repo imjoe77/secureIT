@@ -12,10 +12,11 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getConnection } = require('../database/connection');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, isAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
+router.use(isAdmin);
 
 // GET /api/audit/logs
 router.get('/logs', (req, res) => {
@@ -29,7 +30,7 @@ router.get('/logs', (req, res) => {
     FROM audit_log al
     LEFT JOIN users u ON al.user_id = u.id
     LEFT JOIN tenants t ON al.tenant_id = t.id
-    WHERE al.tenant_id = ?
+    WHERE (al.tenant_id = ? OR al.tenant_id IS NULL)
   `;
   const params = [req.user.tenantId];
 
@@ -42,7 +43,7 @@ router.get('/logs', (req, res) => {
   params.push(limit, offset);
 
   const logs = db.prepare(query).all(...params);
-  const total = db.prepare(`SELECT COUNT(*) as count FROM audit_log WHERE tenant_id = ?`).get(req.user.tenantId);
+  const total = db.prepare(`SELECT COUNT(*) as count FROM audit_log WHERE (tenant_id = ? OR tenant_id IS NULL)`).get(req.user.tenantId);
 
   res.json({ logs, total: total.count, limit, offset });
 });
@@ -132,6 +133,106 @@ router.get('/users', (req, res) => {
     GROUP BY u.id ORDER BY u.username
   `).all(req.user.tenantId);
   res.json({ users });
+});
+
+// POST /api/audit/record - Record a manual security event
+router.post('/record', (req, res) => {
+  const { requestedPermission, decision, reason, userId } = req.body;
+  const db = getConnection();
+  const id = uuidv4();
+  
+  db.prepare(`
+    INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    userId || req.user.id,
+    req.user.tenantId,
+    requestedPermission || 'MANUAL_LOG',
+    decision || 'DENY',
+    reason || 'Manual intervention recorded.',
+    new Date().toISOString()
+  );
+
+  res.json({ message: 'Event recorded.' });
+});
+
+// ═══════════════════════════════════════════════════
+//  TRUSTED DEVICES MANAGEMENT (Zero-Trust Device Registry)
+// ═══════════════════════════════════════════════════
+
+// GET /api/audit/trusted-devices — List all trusted devices
+router.get('/trusted-devices', (req, res) => {
+  const db = getConnection();
+  const devices = db.prepare(`
+    SELECT td.*, r.name as role_name 
+    FROM trusted_devices td
+    JOIN roles r ON td.role_id = r.id
+    WHERE td.tenant_id = ?
+    ORDER BY td.registered_at DESC
+  `).all(req.user.tenantId);
+  res.json({ devices });
+});
+
+// POST /api/audit/trusted-devices — Register a new trusted device
+router.post('/trusted-devices', (req, res) => {
+  const { deviceName, ipAddress, roleName } = req.body;
+  
+  if (!deviceName || !ipAddress || !roleName) {
+    return res.status(400).json({ 
+      error: 'VALIDATION_ERROR', 
+      message: 'deviceName, ipAddress, and roleName are required.' 
+    });
+  }
+
+  const db = getConnection();
+  
+  // Find the role
+  const role = db.prepare('SELECT id, name FROM roles WHERE name = ? AND tenant_id = ?')
+    .get(roleName, req.user.tenantId);
+  
+  if (!role) {
+    return res.status(404).json({ error: 'ROLE_NOT_FOUND', message: `Role '${roleName}' not found.` });
+  }
+
+  // Check for duplicate IP for same role
+  const existing = db.prepare('SELECT id FROM trusted_devices WHERE ip_address = ? AND role_id = ? AND is_active = 1')
+    .get(ipAddress, role.id);
+  
+  if (existing) {
+    return res.status(409).json({ 
+      error: 'DEVICE_EXISTS', 
+      message: `IP '${ipAddress}' is already registered for role '${roleName}'.` 
+    });
+  }
+
+  const id = uuidv4();
+  db.prepare(`
+    INSERT INTO trusted_devices (id, device_name, ip_address, role_id, tenant_id, registered_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, deviceName, ipAddress, role.id, req.user.tenantId, req.user.id);
+
+  res.status(201).json({ 
+    message: `Device '${deviceName}' [${ipAddress}] registered for role '${roleName}'.`,
+    device: { id, deviceName, ipAddress, roleName }
+  });
+});
+
+// DELETE /api/audit/trusted-devices/:id — Revoke a trusted device
+router.delete('/trusted-devices/:id', (req, res) => {
+  const db = getConnection();
+  const device = db.prepare('SELECT * FROM trusted_devices WHERE id = ? AND tenant_id = ?')
+    .get(req.params.id, req.user.tenantId);
+  
+  if (!device) {
+    return res.status(404).json({ error: 'DEVICE_NOT_FOUND', message: 'Trusted device not found.' });
+  }
+
+  db.prepare('UPDATE trusted_devices SET is_active = 0 WHERE id = ?').run(req.params.id);
+  
+  res.json({ 
+    message: `Device '${device.device_name}' [${device.ip_address}] has been revoked.` 
+  });
 });
 
 module.exports = router;

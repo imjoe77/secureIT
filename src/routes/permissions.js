@@ -62,7 +62,7 @@ router.post('/check', (req, res) => {
   if (!permission) return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'permission name is required.' });
 
   const engine = new PermissionGraph();
-  const result = engine.checkAccess(req.user.id, permission, resourceTenantId);
+  const result = engine.checkAccess(req.user.id, permission, resourceTenantId, { ip: req.ip });
   res.json({ check: { user: req.user.username, tenant: req.user.tenantName, permission, ...result } });
 });
 
@@ -78,6 +78,41 @@ router.get('/map', (req, res) => {
   } catch (err) {
     console.error('Permission Map Error:', err);
     res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: err.message });
+  }
+});
+
+// POST /api/permissions/simulate-grant - Predict security impact
+router.post('/simulate-grant', (req, res) => {
+  const { userId, roleId } = req.body;
+  if (!userId || !roleId) {
+    return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'userId and roleId are required.' });
+  }
+
+  try {
+    const engine = new PermissionGraph();
+    const simulation = engine.simulateUserGrant(userId, roleId);
+    
+    // Log the simulation to the audit trail
+    engine.recordAuditLog(
+      req.user.id, 
+      req.user.tenantId, 
+      'SIMULATE_GRANT', 
+      'ALLOW', 
+      `Admin simulated granting role '${simulation.targetRole}' to user '${simulation.targetUser}'. Risk Score: ${simulation.riskScore}. Reason: ${simulation.riskReason}`
+    );
+
+    res.json({ simulation });
+  } catch (err) {
+    console.error('Simulation Error:', err.message);
+    
+    // Log failed/forbidden attempts (e.g., cross-tenant simulation)
+    const engine = new PermissionGraph();
+    engine.recordAuditLog(req.user.id, req.user.tenantId, 'SIMULATE_GRANT', 'DENY', `Simulation failure: ${err.message}`);
+    
+    res.status(err.message.includes('forbidden') ? 403 : 500).json({ 
+      error: 'SIMULATION_ERROR', 
+      message: err.message 
+    });
   }
 });
 

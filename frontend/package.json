@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "secureit",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/drawing_utils": "^0.3.1675466124",
+    "@mediapipe/face_mesh": "^0.4.1633559619",
     "axios": "^1.16.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.38.0",

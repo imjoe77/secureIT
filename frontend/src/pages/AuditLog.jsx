@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   FileText, 
-  Search, 
-  Filter, 
   ChevronLeft, 
   ChevronRight, 
   CheckCircle2, 
@@ -67,6 +65,7 @@ const AuditLog = () => {
                 <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Personnel / ID</th>
                 <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Resource Requested</th>
                 <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Decision</th>
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Reason / Forensics</th>
                 <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Timestamp</th>
                 <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Escalation Path</th>
               </tr>
@@ -75,14 +74,14 @@ const AuditLog = () => {
               {loading ? (
                 Array(5).fill(0).map((_, i) => (
                   <tr key={i} className="animate-pulse">
-                    <td colSpan="5" className="px-8 py-6">
+                    <td colSpan="6" className="px-8 py-6">
                       <div className="h-4 bg-white/5 rounded w-full" />
                     </td>
                   </tr>
                 ))
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan="5" className="px-8 py-16 text-center text-slate-600">
+                  <td colSpan="6" className="px-8 py-16 text-center text-slate-600">
                     <Activity size={40} className="mx-auto mb-4 opacity-10" />
                     <p>No operational logs matching current parameters.</p>
                   </td>
@@ -124,14 +123,21 @@ const AuditLog = () => {
                       </div>
                     </td>
                     <td className="px-8 py-6">
-                      <div className="flex items-center gap-2 text-slate-500 text-xs font-medium">
+                      <p className={`text-[10px] font-medium leading-relaxed max-w-[200px] ${
+                        log.requested_permission === 'LOGIN_DEVICE_LOCKDOWN' ? 'text-defense-red font-bold' : 'text-slate-400'
+                      }`}>
+                        {log.reason}
+                      </p>
+                    </td>
+                    <td className="px-8 py-6">
+                      <div className="flex items-center gap-2 text-slate-500 text-xs font-medium whitespace-nowrap">
                         <Clock size={12} />
                         {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </div>
                     </td>
                     <td className="px-8 py-6 max-w-xs">
                       <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
-                        {log.escalation_path ? (
+                        {log.escalation_path && log.escalation_path !== '[]' ? (
                           JSON.parse(log.escalation_path).map((p, i) => (
                             <React.Fragment key={i}>
                               <span className="text-[10px] font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded">{p}</span>

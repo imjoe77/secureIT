@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Plane, Eye, FileText, ChevronRight, Lock } from 'lucide-react';
+import { Shield, Plane, Eye, ChevronRight, Lock } from 'lucide-react';
 import { authApi } from '../services/api';
 import { motion } from 'framer-motion';
 
