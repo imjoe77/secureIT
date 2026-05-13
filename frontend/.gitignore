@@ -1,4 +1,6 @@
+# =========================
 # Logs
+# =========================
 logs
 *.log
 npm-debug.log*
@@ -7,18 +9,83 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# =========================
+# Runtime data
+# =========================
+pids
+*.pid
+*.seed
+*.pid.lock
 
-# Editor directories and files
+# =========================
+# Dependency directories
+# =========================
+node_modules/
+
+# =========================
+# Build outputs
+# =========================
+dist/
+dist-ssr/
+build/
+coverage/
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Local databases
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+
+# =========================
+# Cache files
+# =========================
+.cache/
+.parcel-cache/
+.vite/
+.tmp/
+temp/
+
+# =========================
+# Testing
+# =========================
+coverage/
+.nyc_output/
+
+# =========================
+# IDE / Editor
+# =========================
 .vscode/*
 !.vscode/extensions.json
-.idea
+
+.idea/
 .DS_Store
+Thumbs.db
+
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# =========================
+# OS generated files
+# =========================
+Desktop.ini
+
+# =========================
+# Docker
+# =========================
+.docker/
+
+# =========================
+# Misc
+# =========================
+*.local

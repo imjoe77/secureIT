@@ -79,6 +79,7 @@ async function seed() {
 
   // ROLE HIERARCHY (The Chain: Brigadier -> Colonel -> Officer -> Soldier)
   const hierarchy = [
+    { parent: getR('Strategic_Admin'), child: getR('Brigadier'), pName: 'Strategic_Admin', cName: 'Brigadier' },
     { parent: getR('Brigadier'), child: getR('Colonel'), pName: 'Brigadier', cName: 'Colonel' },
     { parent: getR('Colonel'),   child: getR('Officer'), pName: 'Colonel', cName: 'Officer' },
     { parent: getR('Officer'),   child: getR('Soldier'), pName: 'Officer', cName: 'Soldier' }
@@ -154,6 +155,8 @@ async function seed() {
   const hash = bcrypt.hashSync('password123', 10);
   const users = [
     { id: uuidv4(), username: 'soldier_user',   role: 'Soldier' },
+    { id: uuidv4(), username: 'soldier_alpha',  role: 'Soldier' },
+    { id: uuidv4(), username: 'soldier_bravo',  role: 'Soldier' },
     { id: uuidv4(), username: 'officer_user',   role: 'Officer' },
     { id: uuidv4(), username: 'colonel_user',   role: 'Colonel' },
     { id: uuidv4(), username: 'brigadier_user', role: 'Brigadier' },
@@ -165,8 +168,56 @@ async function seed() {
     db.prepare('INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)').run(u.id, getR(u.role));
   });
 
-  // Force immediate save
-  db.save();
+  // TACTICAL DOCUMENTS — Multiple per user at every rank
+  console.log('📄 Creating Private Tactical Documents...');
+  const getU = (n) => users.find(u => u.username === n).id;
+
+  const docs = [
+    // Soldier User
+    { id: uuidv4(), title: 'Patrol Route Delta-7',        owner: getU('soldier_user'),    class: 'UNCLASSIFIED' },
+    { id: uuidv4(), title: 'Guard Duty Roster - Week 12', owner: getU('soldier_user'),    class: 'RESTRICTED' },
+
+    // Soldier Alpha
+    { id: uuidv4(), title: "Alpha's Recon Log - Sector 4",      owner: getU('soldier_alpha'), class: 'CONFIDENTIAL' },
+    { id: uuidv4(), title: "Alpha's Equipment Manifest",         owner: getU('soldier_alpha'), class: 'UNCLASSIFIED' },
+    { id: uuidv4(), title: "Alpha's Field Observation Notes",    owner: getU('soldier_alpha'), class: 'RESTRICTED' },
+
+    // Soldier Bravo
+    { id: uuidv4(), title: "Bravo's Personnel Assessment",       owner: getU('soldier_bravo'), class: 'RESTRICTED' },
+    { id: uuidv4(), title: "Bravo's Medical Readiness Report",   owner: getU('soldier_bravo'), class: 'CONFIDENTIAL' },
+
+    // Officer
+    { id: uuidv4(), title: 'Platoon Deployment Plan - Op Falcon',  owner: getU('officer_user'),  class: 'CONFIDENTIAL' },
+    { id: uuidv4(), title: 'After Action Review - Exercise Storm', owner: getU('officer_user'),  class: 'RESTRICTED' },
+    { id: uuidv4(), title: 'Unit Readiness Assessment Q3',         owner: getU('officer_user'),  class: 'CONFIDENTIAL' },
+
+    // Colonel
+    { id: uuidv4(), title: 'Regional Threat Analysis - Zone 9',    owner: getU('colonel_user'),  class: 'SECRET' },
+    { id: uuidv4(), title: 'Force Structure Optimization Report',  owner: getU('colonel_user'),  class: 'CONFIDENTIAL' },
+
+    // Brigadier
+    { id: uuidv4(), title: "General's Strategic War Plan",          owner: getU('brigadier_user'), class: 'TOP SECRET' },
+    { id: uuidv4(), title: 'National Defense Posture Review',      owner: getU('brigadier_user'), class: 'TOP SECRET' },
+    { id: uuidv4(), title: 'Allied Command Integration Brief',     owner: getU('brigadier_user'), class: 'SECRET' },
+  ];
+
+  docs.forEach(d => {
+    db.prepare(`
+      INSERT INTO documents (id, title, owner_id, tenant_id, classification, content)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(d.id, d.title, d.owner, sdc.id, d.class, `Tactical content for ${d.title}`);
+  });
+
+  // PRE-SEEDED SHARES — Demonstrate delegated access
+  console.log('🤝 Creating Delegated Access Entries...');
+  // Bravo can see Alpha's Recon Log
+  const alphaReconId = docs.find(d => d.title.includes("Alpha's Recon")).id;
+  db.prepare('INSERT INTO document_shares (document_id, user_id, tenant_id) VALUES (?, ?, ?)').run(alphaReconId, getU('soldier_bravo'), sdc.id);
+  // Officer can see Colonel's Threat Analysis
+  const colonelThreatId = docs.find(d => d.title.includes("Threat Analysis")).id;
+  db.prepare('INSERT INTO document_shares (document_id, user_id, tenant_id) VALUES (?, ?, ?)').run(colonelThreatId, getU('officer_user'), sdc.id);
+
+  // The database is updated synchronously by better-sqlite3
   console.log('✅ Defense system seeded successfully.');
   
   // Wait a moment for fs buffers to clear

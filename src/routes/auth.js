@@ -1,12 +1,14 @@
 /**
  * Authentication Routes
  * 
- * POST /api/auth/login    - User login, returns JWT
- * POST /api/auth/register - Register new user (admin only in real app)
- * GET  /api/auth/me       - Get current user profile
+ * GET  /api/auth/challenge - Issue fingerprint challenge nonce
+ * POST /api/auth/login     - User login, returns JWT
+ * POST /api/auth/register  - Register new user (admin only in real app)
+ * GET  /api/auth/me        - Get current user profile
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
 const { getConnection } = require('../database/connection');
@@ -14,12 +16,47 @@ const { authenticate, generateToken } = require('../middleware/auth');
 
 const router = express.Router();
 
+// ═══════════════════════════════════════════════════
+//  FINGERPRINT CHALLENGE-RESPONSE NONCE STORE
+// ═══════════════════════════════════════════════════
+// In-memory nonce store. Each nonce is single-use and expires in 60s.
+// This prevents replay attacks — an attacker who steals a fingerprint
+// hash cannot reuse it because the nonce changes every session.
+const nonceStore = new Map();
+const NONCE_TTL_MS = 60 * 1000; // 60 seconds
+
+function cleanExpiredNonces() {
+  const now = Date.now();
+  for (const [nonce, entry] of nonceStore) {
+    if (now - entry.createdAt > NONCE_TTL_MS) nonceStore.delete(nonce);
+  }
+}
+
+// Periodic cleanup every 30s
+setInterval(cleanExpiredNonces, 30_000);
+
+/**
+ * GET /api/auth/challenge
+ * Issues a one-time cryptographic nonce for fingerprint verification.
+ * Client must compute SHA256(fingerprint + nonce) and send it with login.
+ */
+router.get('/challenge', (req, res) => {
+  const nonce = crypto.randomBytes(32).toString('hex');
+  nonceStore.set(nonce, { createdAt: Date.now(), used: false });
+
+  res.json({
+    nonce,
+    expiresIn: NONCE_TTL_MS / 1000,
+    instruction: 'Compute SHA256(deviceFingerprint + nonce) and send as fingerprintResponse in the login body.'
+  });
+});
+
 /**
  * POST /api/auth/login
  * Authenticate user and return JWT token
  */
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { username, password, deviceFingerprint, challengeNonce, fingerprintResponse } = req.body;
 
   if (!username || !password) {
     return res.status(400).json({
@@ -65,6 +102,11 @@ router.post('/login', (req, res) => {
     WHERE ur.user_id = ?
   `).all(user.id);
 
+  // Extract client IP for binding
+  const clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
+  const normalizedIp = clientIp.replace(/^::ffff:/, '');
+  let activeDeviceId = null;
+
   // ═══════════════════════════════════════════════════
   //  ZERO-TRUST DEVICE LOCKDOWN — Enforced at Login
   // ═══════════════════════════════════════════════════
@@ -85,12 +127,6 @@ router.post('/login', (req, res) => {
     if (!matchedRole) continue;
 
     // User holds a restricted role — enforce device verification
-    // Extract the client IP address
-    const clientIp = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
-    
-    // Normalize IPv6-mapped IPv4 addresses for consistent matching
-    const normalizedIp = clientIp.replace(/^::ffff:/, '');
-    
     // Look up the requesting IP in the trusted_devices registry
     const trustedDevice = db.prepare(`
       SELECT * FROM trusted_devices 
@@ -130,7 +166,8 @@ router.post('/login', (req, res) => {
       });
     }
 
-    // Device verified — update last_used_at timestamp
+    // Device verified — update last_used_at timestamp and track active device
+    activeDeviceId = trustedDevice.id;
     db.prepare('UPDATE trusted_devices SET last_used_at = ? WHERE id = ?')
       .run(new Date().toISOString(), trustedDevice.id);
 
@@ -149,11 +186,97 @@ router.post('/login', (req, res) => {
       clientIp,
       new Date().toISOString()
     );
-    
-    console.log(`🔐 Device Lockdown PASSED: ${trustedDevice.device_name} [${clientIp}] verified for ${matchedRole.name}`);
   }
 
-  const token = generateToken(user.id, user.tenant_id);
+  // ═══════════════════════════════════════════════════
+  //  SESSION REGISTRATION
+  // ═══════════════════════════════════════════════════
+  // Create a database-backed session for real-time revocation
+  const sessionId = uuidv4();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // Default 24h
+  
+  db.prepare(`
+    INSERT INTO user_sessions (id, user_id, tenant_id, ip_address, user_agent, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    sessionId, 
+    user.id, 
+    user.tenant_id, 
+    clientIp, 
+    req.headers['user-agent'] || 'unknown', 
+    expiresAt
+  );
+
+  // ═══════════════════════════════════════════════════
+  //  FINGERPRINT CHALLENGE-RESPONSE VERIFICATION
+  // ═══════════════════════════════════════════════════
+  // If the client provided a nonce + response, verify the challenge.
+  // This prevents replay attacks: SHA256(fp + nonce) changes every login.
+  let fingerprintHash = null;
+
+  if (deviceFingerprint && challengeNonce && fingerprintResponse) {
+    // 1. Validate the nonce exists and hasn't expired/been used
+    const nonceEntry = nonceStore.get(challengeNonce);
+    if (!nonceEntry) {
+      return res.status(403).json({
+        error: 'NONCE_INVALID',
+        message: '🛡️ Fingerprint challenge nonce is invalid or expired. Request a new challenge.',
+      });
+    }
+    if (nonceEntry.used) {
+      return res.status(403).json({
+        error: 'NONCE_REUSED',
+        message: '🛡️ REPLAY ATTACK DETECTED: This nonce has already been consumed.',
+      });
+    }
+    if (Date.now() - nonceEntry.createdAt > NONCE_TTL_MS) {
+      nonceStore.delete(challengeNonce);
+      return res.status(403).json({
+        error: 'NONCE_EXPIRED',
+        message: '🛡️ Challenge nonce has expired. Request a fresh challenge.',
+      });
+    }
+
+    // 2. Recompute expected response: SHA256(fingerprint + nonce)
+    const expectedResponse = crypto
+      .createHash('sha256')
+      .update(deviceFingerprint + challengeNonce)
+      .digest('hex');
+
+    if (fingerprintResponse !== expectedResponse) {
+      // Mark nonce as used to prevent retry
+      nonceEntry.used = true;
+
+      db.prepare(`
+        INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        uuidv4(), user.id, user.tenant_id,
+        'FINGERPRINT_CHALLENGE_FAILED', 'DENY',
+        `🛡️ CHALLENGE-RESPONSE FAILED: Client provided incorrect SHA256(fp+nonce). Possible replay or fingerprint spoofing attempt.`,
+        clientIp, new Date().toISOString()
+      );
+
+      return res.status(403).json({
+        error: 'CHALLENGE_FAILED',
+        message: '🛡️ Fingerprint challenge-response verification failed. Access denied.',
+      });
+    }
+
+    // 3. Challenge passed — consume the nonce (single-use)
+    nonceEntry.used = true;
+    fingerprintHash = crypto.createHash('sha256').update(deviceFingerprint).digest('hex');
+  } else if (deviceFingerprint) {
+    // Fallback: hash the fingerprint directly (backwards compat)
+    fingerprintHash = crypto.createHash('sha256').update(deviceFingerprint).digest('hex');
+  }
+
+  const token = generateToken(user.id, user.tenant_id, { 
+    ip: clientIp, 
+    deviceId: activeDeviceId,
+    sessionId: sessionId,
+    fingerprintHash: fingerprintHash
+  });
 
   res.json({
     message: `Welcome back, ${user.username}!`,
@@ -249,6 +372,35 @@ router.get('/me', authenticate, (req, res) => {
     user: req.user,
     roles,
     permissions: permMap ? permMap.permissions : [],
+  });
+});
+
+/**
+ * POST /api/auth/sudo
+ * Elevate session to High-Risk Mode (Sudo) for 15 minutes
+ */
+router.post('/sudo', authenticate, (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ error: 'PASSWORD_REQUIRED', message: 'Password is required for elevation.' });
+  }
+
+  const db = getConnection();
+  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+
+  const passwordValid = bcrypt.compareSync(password, user.password_hash);
+  if (!passwordValid) {
+    return res.status(401).json({ error: 'INVALID_CREDENTIALS', message: 'Elevation failed. Invalid password.' });
+  }
+
+  // Set sudo mode for 15 minutes
+  const sudoUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('UPDATE user_sessions SET sudo_until = ? WHERE id = ?').run(sudoUntil, req.user.session.id);
+
+  res.json({
+    message: '🛡️ ELEVATION SUCCESSFUL: High-risk operations are now unlocked for 15 minutes.',
+    sudoUntil
   });
 });
 

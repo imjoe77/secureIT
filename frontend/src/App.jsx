@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -7,13 +7,20 @@ import {
   Network,
   LogOut,
   Lock,
-  Menu,
-  X,
+  Smartphone,
+  Shield,
+  Activity,
+  History,
+  GitBranch,
+  Terminal,
+  Settings,
   Cpu,
-  Crown,
-  Smartphone
+  Zap,
+  Users
 } from 'lucide-react';
-import DefLanding from './pages/DefLanding';
+
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import RequestAccess from './pages/RequestAccess';
@@ -21,193 +28,132 @@ import AuditLog from './pages/AuditLog';
 import RoleGraph from './pages/RoleGraph';
 import TechStack from './pages/TechStack';
 import TrustedDevices from './pages/TrustedDevices';
+import DocumentAccess from './pages/DocumentAccess';
 
 // ═══════════════════════════════════════════════
-//  USER NAVBAR — Personnel Operations
+//  SIDEBAR
 // ═══════════════════════════════════════════════
-const UserNavbar = ({ user, onLogout }) => {
+const Sidebar = ({ user, isAdmin, onLogout }) => {
   const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const links = [
-    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Request Access', path: '/request', icon: Lock },
-    { name: 'Role Graph', path: '/graph', icon: Network },
+  
+  const userLinks = [
+    { name: 'OVERVIEW', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'MY PERMISSIONS', path: '/dashboard', icon: Shield },
+    { name: 'REQUEST ACCESS', path: '/request', icon: Lock },
+    { name: 'ROLE GRAPH', path: '/graph', icon: GitBranch },
+    { name: 'AUDIT TRAIL', path: '/dashboard', icon: History },
   ];
 
+  const adminLinks = [
+    { name: 'SYSTEM OVERVIEW', path: '/admin/command', icon: Activity },
+    { name: 'PERMISSION GRAPH', path: '/admin/graph', icon: GitBranch },
+    { name: 'THREAT FEED', path: '/admin/command', icon: ShieldAlert },
+    { name: 'AUDIT INTELLIGENCE', path: '/admin/logs', icon: FileText },
+    { name: 'SECURE TERMINALS', path: '/admin/devices', icon: Smartphone },
+    { name: 'DOCUMENT ACCESS', path: '/admin/docs', icon: FileText },
+    { name: 'TECH INTEL', path: '/admin/tech', icon: Cpu },
+    { name: 'SETTINGS', path: '/admin/command', icon: Settings },
+  ];
+
+  const links = isAdmin ? adminLinks : userLinks;
+
   return (
-    <nav className="bg-defense-900/50 border-b border-slate-800 sticky top-0 z-50 px-6 py-4 mb-8">
-      <div className="max-w-7xl mx-auto flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-defense-primary rounded-xl flex items-center justify-center shadow-lg shadow-defense-primary/20">
-            <ShieldAlert className="text-white" size={24} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white uppercase tracking-wider">SecureIT</h1>
-            <p className="text-[9px] text-slate-500 uppercase tracking-widest font-black">Personnel Operations</p>
-          </div>
+    <div className="w-[220px] h-screen bg-bg-surface border-r border-border flex flex-col fixed left-0 top-0 z-50">
+      <div className="p-6 border-b border-border">
+        <div className="text-sm font-semibold tracking-tight uppercase text-primary">SECUREIT</div>
+        <div className="text-[11px] font-mono text-secondary uppercase tracking-widest mt-1 truncate">
+          {isAdmin ? 'STRATEGIC CMD' : user?.tenant?.name || 'OPERATIONS'}
         </div>
-
-        {/* Desktop Links */}
-        <div className="hidden md:flex items-center gap-8">
-          {links.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              className={`flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all ${
-                location.pathname === link.path ? 'text-defense-primary' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <link.icon size={16} />
-              {link.name}
-            </Link>
-          ))}
-          <div className="h-6 w-px bg-slate-800 mx-2" />
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-xs font-black text-white uppercase tracking-tight">{user?.username}</p>
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{user?.tenant?.name}</p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="p-2 text-slate-500 hover:text-defense-red hover:bg-defense-red/5 rounded-xl transition-all"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Toggle */}
-        <button className="md:hidden text-white" onClick={() => setIsOpen(!isOpen)}>
-          {isOpen ? <X size={28} /> : <Menu size={28} />}
-        </button>
       </div>
 
-      {/* Mobile Menu */}
-      {isOpen && (
-        <div className="md:hidden absolute top-full left-0 w-full bg-defense-900 border-b border-slate-800 py-4 flex flex-col gap-2 px-6">
-          {links.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center gap-3 p-3 rounded-xl ${
-                location.pathname === link.path ? 'bg-defense-primary/10 text-defense-primary' : 'text-slate-400'
-              }`}
-            >
-              <link.icon size={20} />
-              {link.name}
-            </Link>
-          ))}
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-3 p-3 text-defense-red hover:bg-defense-red/10 rounded-xl"
+      <nav className="flex-1 py-4 overflow-y-auto">
+        {links.map((link) => (
+          <Link
+            key={link.name}
+            to={link.path}
+            className={`flex items-center gap-3 px-6 py-2.5 text-[11px] font-semibold tracking-wider transition-all border-l-2 ${
+              location.pathname === link.path 
+                ? 'border-accent text-primary bg-bg-elevated' 
+                : 'border-transparent text-secondary hover:text-primary hover:bg-bg-elevated'
+            }`}
           >
-            <LogOut size={20} />
-            Logout
-          </button>
+            <link.icon size={14} className={location.pathname === link.path ? 'text-accent' : ''} />
+            {link.name}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="p-4 border-t border-border">
+        <div className="bg-bg-elevated p-3 rounded-sm space-y-2 font-mono text-[10px]">
+          <div className="flex justify-between">
+            <span className="text-muted">OPERATOR</span>
+            <span className="text-secondary uppercase">{user?.username || 'GUEST'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted">CLEARANCE</span>
+            <span className={isAdmin ? 'text-amber-secure font-bold' : 'text-secondary'}>
+              {isAdmin ? 'ADMIN' : (localStorage.getItem('secureit_role') || 'SOLDIER').toUpperCase()}
+            </span>
+          </div>
+          <div className="flex justify-between gap-2 overflow-hidden">
+            <span className="text-muted shrink-0">TENANT</span>
+            <span className="text-secondary truncate">STRAT DEF CMD</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted">SESSION</span>
+            <span className="text-secondary">a3f7...c91b</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted">UPTIME</span>
+            <span className="text-secondary">00:14:32</span>
+          </div>
         </div>
-      )}
-    </nav>
+        <button 
+          onClick={onLogout}
+          className="w-full mt-4 flex items-center justify-center gap-2 text-[10px] font-semibold text-muted hover:text-red-secure transition-colors uppercase tracking-widest"
+        >
+          <LogOut size={12} />
+          Terminate Session
+        </button>
+      </div>
+    </div>
   );
 };
 
 // ═══════════════════════════════════════════════
-//  ADMIN NAVBAR — Strategic Command
+//  TOP BAR
 // ═══════════════════════════════════════════════
-const AdminNavbar = ({ user, onLogout }) => {
-  const location = useLocation();
-  const [isOpen, setIsOpen] = useState(false);
-
-  const links = [
-    { name: 'Command Center', path: '/admin/command', icon: ShieldAlert },
-    { name: 'Audit Logs', path: '/admin/logs', icon: FileText },
-    { name: 'Secure Terminals', path: '/admin/devices', icon: Smartphone },
-    { name: 'Role Graph', path: '/admin/graph', icon: Network },
-    { name: 'Tech Intel', path: '/admin/tech', icon: Cpu },
-  ];
+const TopBar = ({ isAdmin }) => {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <nav className="sticky top-0 z-50 px-6 py-4 mb-8 bg-defense-900 border-b border-amber-900/30">
-      <div className="max-w-7xl mx-auto flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center shadow-lg border border-amber-500/20">
-            <Crown className="text-amber-500" size={24} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-white uppercase tracking-wider">SecureIT</h1>
-            <p className="text-[9px] text-amber-500 uppercase tracking-widest font-black">Admin Command Center</p>
-          </div>
-        </div>
-
-        {/* Desktop Links */}
-        <div className="hidden md:flex items-center gap-8">
-          {links.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              className={`flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all ${
-                location.pathname === link.path ? 'text-amber-500' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <link.icon size={16} />
-              {link.name}
-            </Link>
-          ))}
-          <div className="h-6 w-px bg-amber-900/30 mx-2" />
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="flex items-center gap-1.5 justify-end">
-                <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                  <Smartphone size={10} className="text-emerald-500" />
-                  <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Secure Terminal Verified</span>
-                </div>
-                <Crown size={12} className="text-amber-500 ml-1" />
-                <p className="text-[10px] font-black text-amber-500 uppercase">Strategic HQ</p>
-              </div>
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{user?.tenant?.name}</p>
-            </div>
-            <button
-              onClick={onLogout}
-              className="p-2 text-slate-500 hover:text-defense-red hover:bg-defense-red/5 rounded-xl transition-all"
-            >
-              <LogOut size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Toggle */}
-        <button className="md:hidden text-white" onClick={() => setIsOpen(!isOpen)}>
-          {isOpen ? <X size={28} /> : <Menu size={28} />}
-        </button>
+    <div className="h-10 border-b border-border flex items-center justify-between px-6 bg-bg-base sticky top-0 z-40">
+      <div className="flex items-center gap-2 text-[11px] font-mono text-muted uppercase">
+        <span>SECUREIT</span>
+        <span>/</span>
+        <span>STRATEGIC DEFENSE CMD</span>
+        <span>/</span>
+        <span className="text-secondary">OVERVIEW</span>
       </div>
-
-      {/* Mobile Menu */}
-      {isOpen && (
-        <div className="md:hidden absolute top-full left-0 w-full bg-defense-900 border-b border-amber-900/30 py-4 flex flex-col gap-2 px-6">
-          {links.map((link) => (
-            <Link
-              key={link.path}
-              to={link.path}
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center gap-3 p-3 rounded-xl ${
-                location.pathname === link.path ? 'bg-amber-500/10 text-amber-500' : 'text-slate-400'
-              }`}
-            >
-              <link.icon size={20} />
-              {link.name}
-            </Link>
-          ))}
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-3 p-3 text-defense-red hover:bg-defense-red/10 rounded-xl"
-          >
-            <LogOut size={20} />
-            Logout
-          </button>
+      <div className="flex items-center gap-4">
+        {isAdmin && (
+          <div className="text-[10px] font-mono text-amber-secure uppercase tracking-widest mr-4">
+            ADMIN CONSOLE · FULL SPECTRUM ACCESS
+          </div>
+        )}
+        <div className="flex items-center gap-4 font-mono text-[12px] text-secondary">
+          <span>{time.toLocaleTimeString('en-GB', { hour12: false })}</span>
+          <div className="flex items-center gap-2">
+            <div className="status-dot green pulse-dot" />
+            <span className="text-[11px] uppercase tracking-widest text-muted">SYSTEM NOMINAL</span>
+          </div>
         </div>
-      )}
-    </nav>
+      </div>
+    </div>
   );
 };
 
@@ -246,24 +192,36 @@ function App() {
     window.location.href = '/';
   };
 
+  const Layout = ({ children, isAdmin = false }) => (
+    <div className="min-h-screen bg-bg-base flex selection:bg-accent selection:text-white">
+      <Sidebar user={user} isAdmin={isAdmin} onLogout={handleLogout} />
+      <div className="flex-1 ml-[220px] flex flex-col min-h-screen">
+        <TopBar isAdmin={isAdmin} />
+        <div className="flex-1 overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <Router>
-      <div className="min-h-screen">
+      <div className="min-h-screen font-sans">
         <Routes>
+          {/* Public Landing Page */}
+          <Route path="/" element={<LandingPage />} />
+          
           {/* Login Page */}
-          <Route path="/" element={<DefLanding setUser={setUser} />} />
+          <Route path="/login" element={<LoginPage setUser={setUser} />} />
 
           {/* ─── USER ROUTES ─── */}
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <div className="pb-12">
-                  <UserNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <Dashboard user={user} />
-                  </div>
-                </div>
+                <Layout>
+                  <Dashboard user={user} />
+                </Layout>
               </ProtectedRoute>
             }
           />
@@ -271,26 +229,19 @@ function App() {
             path="/request"
             element={
               <ProtectedRoute>
-                <div className="pb-12">
-                  <UserNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <RequestAccess user={user} />
-                  </div>
-                </div>
+                <Layout>
+                  <RequestAccess user={user} />
+                </Layout>
               </ProtectedRoute>
             }
           />
-
           <Route
             path="/graph"
             element={
               <ProtectedRoute>
-                <div className="pb-12">
-                  <UserNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <RoleGraph />
-                  </div>
-                </div>
+                <Layout>
+                  <RoleGraph />
+                </Layout>
               </ProtectedRoute>
             }
           />
@@ -300,12 +251,9 @@ function App() {
             path="/admin/command"
             element={
               <AdminRoute>
-                <div className="pb-12">
-                  <AdminNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <AdminDashboard />
-                  </div>
-                </div>
+                <Layout isAdmin={true}>
+                  <AdminDashboard />
+                </Layout>
               </AdminRoute>
             }
           />
@@ -313,12 +261,9 @@ function App() {
             path="/admin/logs"
             element={
               <AdminRoute>
-                <div className="pb-12">
-                  <AdminNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <AuditLog />
-                  </div>
-                </div>
+                <Layout isAdmin={true}>
+                  <AuditLog />
+                </Layout>
               </AdminRoute>
             }
           />
@@ -326,12 +271,9 @@ function App() {
             path="/admin/graph"
             element={
               <AdminRoute>
-                <div className="pb-12">
-                  <AdminNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <RoleGraph />
-                  </div>
-                </div>
+                <Layout isAdmin={true}>
+                  <RoleGraph />
+                </Layout>
               </AdminRoute>
             }
           />
@@ -339,12 +281,9 @@ function App() {
             path="/admin/tech"
             element={
               <AdminRoute>
-                <div className="pb-12">
-                  <AdminNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <TechStack />
-                  </div>
-                </div>
+                <Layout isAdmin={true}>
+                  <TechStack />
+                </Layout>
               </AdminRoute>
             }
           />
@@ -352,12 +291,19 @@ function App() {
             path="/admin/devices"
             element={
               <AdminRoute>
-                <div className="pb-12">
-                  <AdminNavbar user={user} onLogout={handleLogout} />
-                  <div className="max-w-7xl mx-auto px-6">
-                    <TrustedDevices />
-                  </div>
-                </div>
+                <Layout isAdmin={true}>
+                  <TrustedDevices />
+                </Layout>
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/docs"
+            element={
+              <AdminRoute>
+                <Layout isAdmin={true}>
+                  <DocumentAccess />
+                </Layout>
               </AdminRoute>
             }
           />

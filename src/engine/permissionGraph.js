@@ -662,7 +662,7 @@ class PermissionGraph {
       'SELECT id, name, description, is_system_role FROM roles WHERE tenant_id = ?'
     ).all(tenantId);
 
-    const edges = this.db.prepare(`
+    const rawEdges = this.db.prepare(`
       SELECT rh.parent_role_id, rh.child_role_id, 
              r1.name as parent_name, r2.name as child_name
       FROM role_hierarchy rh
@@ -670,6 +670,10 @@ class PermissionGraph {
       JOIN roles r2 ON rh.child_role_id = r2.id
       WHERE r1.tenant_id = ? AND r2.tenant_id = ?
     `).all(tenantId, tenantId);
+
+    // Admin is a separate command entity, not part of role inheritance visualization.
+    const isAdminRole = (roleName = '') => roleName.toLowerCase().includes('admin');
+    const edges = rawEdges.filter(e => !isAdminRole(e.parent_name) && !isAdminRole(e.child_name));
 
     const rolePermissions = {};
     roles.forEach(role => {

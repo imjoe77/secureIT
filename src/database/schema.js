@@ -137,6 +137,20 @@ const SCHEMA_SQL = `
     FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
   );
 
+  -- User Sessions (for real-time revocation)
+  CREATE TABLE IF NOT EXISTS user_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    is_revoked INTEGER DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sudo_until DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   -- Create indexes for performance
   CREATE INDEX IF NOT EXISTS idx_users_tenant ON users(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_roles_tenant ON roles(tenant_id);
@@ -150,6 +164,37 @@ const SCHEMA_SQL = `
   CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
   CREATE INDEX IF NOT EXISTS idx_trusted_devices_role ON trusted_devices(role_id);
   CREATE INDEX IF NOT EXISTS idx_trusted_devices_ip ON trusted_devices(ip_address);
+  CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_user_sessions_active ON user_sessions(is_revoked);
+
+  -- Tactical Documents (Owned by specific users)
+  CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT,
+    classification TEXT DEFAULT 'UNCLASSIFIED',
+    owner_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents(owner_id);
+  CREATE INDEX IF NOT EXISTS idx_documents_tenant ON documents(tenant_id);
+
+  -- Document Shares (Whitelisting users for other users' docs)
+  CREATE TABLE IF NOT EXISTS document_shares (
+    document_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    access_level TEXT DEFAULT 'READ', -- READ, WRITE
+    granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (document_id, user_id),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+  );
 `;
 
 module.exports = { SCHEMA_SQL };
+

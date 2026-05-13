@@ -13,6 +13,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { getConnection } = require('../database/connection');
 const { authenticate, isAdmin } = require('../middleware/auth');
+const { analyzeThreats, clearFlag, getFlaggedActors } = require('../engine/threatAnalyzer');
 
 const router = express.Router();
 router.use(authenticate);
@@ -30,7 +31,7 @@ router.get('/logs', (req, res) => {
     FROM audit_log al
     LEFT JOIN users u ON al.user_id = u.id
     LEFT JOIN tenants t ON al.tenant_id = t.id
-    WHERE (al.tenant_id = ? OR al.tenant_id IS NULL)
+    WHERE al.tenant_id = ?
   `;
   const params = [req.user.tenantId];
 
@@ -43,7 +44,7 @@ router.get('/logs', (req, res) => {
   params.push(limit, offset);
 
   const logs = db.prepare(query).all(...params);
-  const total = db.prepare(`SELECT COUNT(*) as count FROM audit_log WHERE (tenant_id = ? OR tenant_id IS NULL)`).get(req.user.tenantId);
+  const total = db.prepare(`SELECT COUNT(*) as count FROM audit_log WHERE tenant_id = ?`).get(req.user.tenantId);
 
   res.json({ logs, total: total.count, limit, offset });
 });
@@ -96,20 +97,27 @@ router.get('/rules', (req, res) => {
 
 // POST /api/firewall/rules
 router.post('/rules', (req, res) => {
-  const { name, description, ruleType, config, tenantId } = req.body;
+  const { name, description, ruleType, config } = req.body;
   if (!name || !ruleType || !config) {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'name, ruleType, and config are required.' });
   }
   const db = getConnection();
   const id = uuidv4();
+  // FORCE tenant_id to be the user's tenantId (Prevents cross-tenant injection)
   db.prepare('INSERT INTO firewall_rules (id, name, description, rule_type, config, tenant_id) VALUES (?, ?, ?, ?, ?, ?)').run(
-    id, name, description || null, ruleType, JSON.stringify(config), tenantId || null
+    id, name, description || null, ruleType, JSON.stringify(config), req.user.tenantId
   );
-  res.status(201).json({ message: `Firewall rule '${name}' created.`, rule: { id, name, ruleType, config } });
+  res.status(201).json({ message: `Firewall rule '${name}' created for your tenant.`, rule: { id, name, ruleType, config } });
 });
 
 // GET /api/firewall/tenants
 router.get('/tenants', (req, res) => {
+  // 🚩 SECURITY FIX: Only Strategic HQ (Master Tenant) should see the global tenant list
+  // Assuming 'Strategic HQ' or specific ID is the master tenant
+  if (req.user.tenantName !== 'Strategic HQ' && req.user.tenantName !== 'Global Command') {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Cross-tenant discovery is prohibited. Only Strategic HQ can list tenants.' });
+  }
+
   const db = getConnection();
   const tenants = db.prepare(`
     SELECT t.id, t.name, t.created_at, COUNT(u.id) as user_count
@@ -139,8 +147,16 @@ router.get('/users', (req, res) => {
 router.post('/record', (req, res) => {
   const { requestedPermission, decision, reason, userId } = req.body;
   const db = getConnection();
-  const id = uuidv4();
   
+  // 🚩 SECURITY FIX: If userId is provided, verify they belong to the same tenant
+  if (userId) {
+    const targetUser = db.prepare('SELECT tenant_id FROM users WHERE id = ?').get(userId);
+    if (!targetUser || targetUser.tenant_id !== req.user.tenantId) {
+      return res.status(403).json({ error: 'TENANT_MISMATCH', message: 'Cannot record logs for users in a different tenant.' });
+    }
+  }
+
+  const id = uuidv4();
   db.prepare(`
     INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, timestamp)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -233,6 +249,31 @@ router.delete('/trusted-devices/:id', (req, res) => {
   res.json({ 
     message: `Device '${device.device_name}' [${device.ip_address}] has been revoked.` 
   });
+});
+
+// ═══════════════════════════════════════════════════
+//  THREAT ACTOR DETECTION (Sliding Window Rate Analyzer)
+// ═══════════════════════════════════════════════════
+
+// GET /api/audit/threats — Run sliding window analysis and return threats
+router.get('/threats', (req, res) => {
+  try {
+    const result = analyzeThreats(req.user.tenantId);
+    res.json(result);
+  } catch (err) {
+    console.error('Threat analysis error:', err);
+    res.status(500).json({ error: 'ANALYSIS_FAILED', message: err.message });
+  }
+});
+
+// DELETE /api/audit/threats/:userId — Clear a threat flag
+router.delete('/threats/:userId', (req, res) => {
+  const cleared = clearFlag(req.params.userId);
+  if (cleared) {
+    res.json({ message: 'Threat flag cleared.', userId: req.params.userId });
+  } else {
+    res.status(404).json({ error: 'NOT_FLAGGED', message: 'User is not currently flagged.' });
+  }
 });
 
 module.exports = router;

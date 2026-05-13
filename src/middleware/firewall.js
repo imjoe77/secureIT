@@ -33,13 +33,16 @@ const firewall = (permissionName) => {
 
       // Log decision to audit trail
       const db = getConnection();
+      const auditLogId = uuidv4();
+      req.auditLogId = auditLogId;
+
       db.prepare(`
         INSERT INTO audit_log (
           id, user_id, tenant_id, requested_permission, decision, 
           reason, escalation_path, ip_address, endpoint, method
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        uuidv4(),
+        auditLogId,
         req.user.id,
         req.user.tenantId,
         permissionName,

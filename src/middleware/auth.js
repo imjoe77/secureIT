@@ -1,27 +1,16 @@
-/**
- * JWT Authentication Middleware
- * 
- * Handles:
- *   - Token verification and decoding
- *   - User context injection into request
- *   - Tenant context extraction
- */
-
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { getConnection } = require('../database/connection');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defense-firewall-secret';
 
-/**
- * Middleware: Verify JWT token and attach user to request.
- */
 function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
       error: 'AUTHENTICATION_REQUIRED',
-      message: 'No valid authentication token provided. Include "Authorization: Bearer <token>" header.',
+      message: 'No valid authentication token provided.',
     });
   }
 
@@ -29,9 +18,8 @@ function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    
-    // Fetch full user details from database
     const db = getConnection();
+    
     const user = db.prepare(`
       SELECT u.id, u.username, u.email, u.tenant_id, u.is_active, t.name as tenant_name
       FROM users u
@@ -39,78 +27,102 @@ function authenticate(req, res, next) {
       WHERE u.id = ?
     `).get(decoded.userId);
 
-    if (!user) {
-      return res.status(401).json({
-        error: 'USER_NOT_FOUND',
-        message: 'Authenticated user no longer exists.',
-      });
+    if (!user || !user.is_active) {
+      return res.status(401).json({ error: 'USER_INVALID', message: 'User invalid.' });
     }
 
-    if (!user.is_active) {
-      return res.status(403).json({
-        error: 'USER_DEACTIVATED',
-        message: `User '${user.username}' has been deactivated.`,
-      });
-    }
-
-    // Attach user context to request
+    // Attach user AND session context (needed for Sudo/Logout)
     req.user = {
       id: user.id,
       username: user.username,
       email: user.email,
       tenantId: user.tenant_id,
       tenantName: user.tenant_name,
+      session: decoded.sessionId ? { id: decoded.sessionId } : null
     };
+
+    // Layer 1: IP Check
+    const clientIp = (req.ip || req.connection?.remoteAddress || 'unknown').replace(/^::ffff:/, '');
+    if (decoded.bindingIp && decoded.bindingIp !== clientIp) {
+      return res.status(403).json({ error: 'IP_MISMATCH', message: '🛡️ IP Violation detected.' });
+    }
+
+    // Layer 2: Fingerprint Check
+    if (decoded.fingerprintHash) {
+      const liveFp = req.headers['x-device-fingerprint'];
+      if (!liveFp) {
+        return res.status(403).json({ error: 'FP_REQUIRED', message: '🛡️ Hardware signature required.' });
+      }
+
+      const liveHash = crypto.createHash('sha256').update(liveFp).digest('hex');
+      if (liveHash !== decoded.fingerprintHash) {
+        console.log(`🛡️ [SESSION SPLIT DETECTED] User: ${user.username}`);
+        
+        // 1. KILL THE SESSION INSTANTLY
+        if (decoded.sessionId) {
+          db.prepare('UPDATE user_sessions SET is_revoked = 1 WHERE id = ?').run(decoded.sessionId);
+        }
+
+        // 2. RECORD CRITICAL AUDIT LOG
+        const { v4: uuidv4 } = require('uuid');
+        db.prepare(`
+          INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          uuidv4(),
+          user.id,
+          user.tenantId,
+          'SESSION_SPLIT_ALERT',
+          'DENY',
+          `🚨 CRITICAL: Session Split Detected! Intruder attempted access from unauthorized hardware. Session has been TERMINATED globally.`,
+          clientIp,
+          new Date().toISOString()
+        );
+
+        return res.status(403).json({ 
+          error: 'FP_MISMATCH', 
+          message: '🛡️ SECURITY BREACH: Possible intruder detected in this session. For your protection, the session has been terminated across all devices.' 
+        });
+      }
+    }
+
+    // Layer 3: Trusted Device Check
+    if (decoded.deviceId) {
+      const device = db.prepare('SELECT is_active FROM trusted_devices WHERE id = ? AND is_active = 1').get(decoded.deviceId);
+      if (!device) {
+        return res.status(403).json({ error: 'DEVICE_INVALID', message: '🛡️ Device revoked.' });
+      }
+    }
 
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        error: 'TOKEN_EXPIRED',
-        message: 'Authentication token has expired. Please log in again.',
-      });
-    }
-    return res.status(401).json({
-      error: 'INVALID_TOKEN',
-      message: 'Authentication token is invalid.',
-    });
+    return res.status(401).json({ error: 'INVALID_TOKEN' });
   }
 }
 
-/**
- * Middleware: Verify if user has Admin (Brigadier) status.
- */
 function isAdmin(req, res, next) {
-  if (!req.user) return res.status(401).json({ error: 'UNAUTHORIZED' });
-  
   const db = getConnection();
-  const roles = db.prepare(`
-    SELECT r.name, r.level 
-    FROM roles r
+  const role = db.prepare(`
+    SELECT r.name FROM roles r
     JOIN user_roles ur ON r.id = ur.role_id
-    WHERE ur.user_id = ?
-  `).all(req.user.id);
-
-  const isBrigadier = roles.some(r => r.name === 'Brigadier' || r.level >= 10);
-  
-  if (!isBrigadier) {
-    return res.status(403).json({
-      error: 'ADMIN_ACCESS_REQUIRED',
-      message: 'Supreme command clearance (Brigadier level 10) required for this operation.',
-    });
-  }
-
+    WHERE ur.user_id = ? AND r.name IN ('Brigadier', 'Strategic_Admin')
+  `).get(req.user.id);
+  if (!role) return res.status(403).json({ error: 'ADMIN_ONLY' });
   next();
 }
 
-/**
- * Generate a JWT token for a user.
- */
-function generateToken(userId, tenantId) {
+function generateToken(userId, tenantId, bindingData = {}) {
   return jwt.sign(
-    { userId, tenantId },
+    { 
+      userId, 
+      tenantId,
+      bindingIp: bindingData.ip,
+      deviceId: bindingData.deviceId,
+      sessionId: bindingData.sessionId,
+      fingerprintHash: bindingData.fingerprintHash || null
+    }, 
     JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    { expiresIn: '24h' }
   );
 }
 

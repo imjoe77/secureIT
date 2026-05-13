@@ -5,30 +5,20 @@ import {
   Zap, 
   AlertTriangle, 
   CheckCircle2, 
+  Lock,
+  WifiOff,
+  Fingerprint,
   ChevronRight,
+  FileText,
   ShieldAlert,
   Info,
-  FileText,
-  XCircle,
-  Lock
+  XCircle
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import api, { permissionApi } from '../services/api';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Link } from 'react-router-dom';
 
-const StatCard = ({ icon: Icon, label, value, color }) => (
-  <div className="glass p-6 rounded-3xl flex items-center gap-6 border-slate-800/50">
-    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${color} bg-opacity-10 shadow-inner`}>
-      <Icon size={26} className={color.replace('bg-', 'text-')} />
-    </div>
-    <div>
-      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{label}</p>
-      <p className="text-3xl font-bold text-white leading-none mt-1.5">{value}</p>
-    </div>
-  </div>
-);
-
-const Dashboard = () => {
+const Dashboard = ({ user }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -41,8 +31,7 @@ const Dashboard = () => {
         const response = await permissionApi.getMap();
         setData(response.data);
       } catch (err) {
-        console.error('Dashboard data load failed:', err);
-        setError(err.message || 'Tactical data fetch failed');
+        setError(err.response?.data?.message || err.message || 'Tactical data fetch failed');
       } finally {
         setLoading(false);
       }
@@ -51,30 +40,25 @@ const Dashboard = () => {
   }, []);
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center h-64 gap-4">
-      <div className="w-12 h-12 border-4 border-defense-primary border-t-transparent rounded-full animate-spin" />
-      <p className="text-xs font-black uppercase tracking-widest text-slate-500 animate-pulse">Initializing Tactical Board...</p>
+    <div className="flex flex-col items-center justify-center h-full gap-4 bg-bg-base min-h-[400px]">
+      <div className="w-8 h-8 border-2 border-accent border-t-transparent animate-spin" />
+      <p className="text-[10px] font-mono uppercase tracking-widest text-secondary animate-pulse">Initializing Board...</p>
     </div>
   );
 
   if (error) return (
-    <div className="glass p-12 rounded-[40px] text-center border-defense-red/20">
-      <AlertTriangle className="text-defense-red mx-auto mb-4" size={48} />
-      <h3 className="text-xl font-bold text-white mb-2">Tactical Data Failure</h3>
-      <p className="text-slate-400 mb-6">{error}</p>
-      <button onClick={() => window.location.reload()} className="btn-primary">Retry Link</button>
+    <div className="p-12 text-center threat-bg m-6">
+      <AlertTriangle className="text-red-secure mx-auto mb-4" size={32} />
+      <h3 className="text-sm font-bold text-primary mb-2 uppercase tracking-widest">Tactical Link Failure</h3>
+      <p className="text-secondary text-[11px] mb-6 font-mono">{error}</p>
+      <button onClick={() => window.location.reload()} className="btn-outline border-red-secure text-red-secure mx-auto h-9 px-6 text-[10px] font-bold">RETRY HANDSHAKE</button>
     </div>
   );
 
   const summary = data?.summary || {};
-  const perms = data?.permissions || { direct: [], inherited: [] };
-  const roles = data?.directRoles || [];
-
-  const stats = [
-    { label: 'Total Access', value: summary.totalPermissions || 0, icon: ShieldCheck, color: 'bg-defense-primary' },
-    { label: 'Direct Rights', value: summary.directPermissions || 0, icon: Zap, color: 'bg-defense-green' },
-    { label: 'Inherited', value: summary.inheritedPermissions || 0, icon: Activity, color: 'bg-defense-yellow' },
-    { label: 'Critical Area', value: summary.byRiskLevel?.critical || 0, icon: AlertTriangle, color: 'bg-defense-red' },
+  const perms = [
+    ...(data?.permissions?.direct || []).map(p => ({ ...p, source: 'DIRECT', depth: '0' })),
+    ...(data?.permissions?.inherited || []).map(p => ({ ...p, source: 'INHERITED', depth: '1' }))
   ];
 
   const testAction = async (action) => {
@@ -82,228 +66,179 @@ const Dashboard = () => {
     setActionResult(null);
     try {
       let response;
-      
       switch(action) {
-        case 'VIEW':
-          response = await api.get('/resource/reports');
-          break;
-        case 'UPDATE':
-          response = await api.put('/resource/reports');
-          break;
-        case 'DELETE':
-          response = await api.delete('/resource/reports');
-          break;
+        case 'VIEW': response = await api.get('/resource/reports'); break;
+        case 'UPDATE': response = await api.put('/resource/reports'); break;
+        case 'DELETE': response = await api.delete('/resource/reports'); break;
+        default: response = { data: { status: 'DENIED', reason: 'Unknown Action' } };
       }
       setActionResult(response.data);
     } catch (err) {
-      setActionResult(err.response?.data || { status: 'ERROR', reason: 'Connection Failure' });
+      setActionResult(err.response?.data || { status: 'DENIED', reason: 'Access Restriction' });
     } finally {
       setActionLoading(false);
     }
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      <motion.div 
-        initial={{ opacity: 0, x: -10 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="flex items-end justify-between border-b border-slate-800/50 pb-6"
-      >
-        <div>
-          <h2 className="text-4xl font-bold text-white tracking-tight">Strategic Defense Console</h2>
-          <p className="text-slate-500 font-medium mt-1 uppercase text-xs tracking-widest">Theater Operational Readiness & Enforcement</p>
-        </div>
-        <div className="bg-defense-green/5 border border-defense-green/20 px-4 py-2 rounded-xl flex items-center gap-2.5">
-          <div className="w-1.5 h-1.5 bg-defense-green rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-defense-green">System Live</span>
-        </div>
-      </motion.div>
-
-      {/* Defense Operational Console */}
-      <motion.div 
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="glass p-8 rounded-[32px] border-slate-800/50 relative overflow-hidden"
-      >
-        <div className="absolute -top-12 -right-12 p-8 opacity-[0.03] rotate-12">
-          <ShieldAlert size={240} />
-        </div>
-        
-        <h3 className="text-sm font-black text-slate-400 mb-8 uppercase tracking-[0.3em] flex items-center gap-3">
-          <Lock className="text-defense-primary" size={18} />
-          Operational Action Terminal
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <button 
-            onClick={() => testAction('VIEW')}
-            disabled={actionLoading}
-            className="flex flex-col items-center justify-center p-8 bg-slate-900/50 border border-slate-800 hover:border-defense-primary/50 hover:bg-defense-primary/[0.02] rounded-[24px] transition-all group"
-          >
-            <div className="w-12 h-12 bg-defense-primary/5 rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform border border-defense-primary/10">
-              <FileText className="text-defense-primary" size={24} />
-            </div>
-            <span className="font-black text-slate-300 uppercase tracking-widest text-[10px] group-hover:text-defense-primary transition-colors">View Intelligence</span>
-          </button>
-
-          <button 
-            onClick={() => testAction('UPDATE')}
-            disabled={actionLoading}
-            className="flex flex-col items-center justify-center p-8 bg-slate-900/50 border border-slate-800 hover:border-defense-yellow/50 hover:bg-defense-yellow/[0.02] rounded-[24px] transition-all group"
-          >
-            <div className="w-12 h-12 bg-defense-yellow/5 rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform border border-defense-yellow/10">
-              <Activity className="text-defense-yellow" size={24} />
-            </div>
-            <span className="font-black text-slate-300 uppercase tracking-widest text-[10px] group-hover:text-defense-yellow transition-colors">Update Operationals</span>
-          </button>
-
-          <button 
-            onClick={() => testAction('DELETE')}
-            disabled={actionLoading}
-            className="flex flex-col items-center justify-center p-8 bg-slate-900/50 border border-slate-800 hover:border-defense-red/50 hover:bg-defense-red/[0.02] rounded-[24px] transition-all group"
-          >
-            <div className="w-12 h-12 bg-defense-red/5 rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform border border-defense-red/10">
-              <ShieldAlert className="text-defense-red" size={24} />
-            </div>
-            <span className="font-black text-slate-300 uppercase tracking-widest text-[10px] group-hover:text-defense-red transition-colors">Purge Archives</span>
-          </button>
-        </div>
-
-        {actionResult && (
-          <motion.div 
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            className={`p-6 rounded-3xl border ${
-              actionResult.status === 'ALLOWED' 
-                ? 'bg-defense-green/10 border-defense-green/20' 
-                : 'bg-defense-red/10 border-defense-red/20'
-            }`}
-          >
-            <div className="flex items-start gap-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                actionResult.status === 'ALLOWED' ? 'bg-defense-green/20' : 'bg-defense-red/20'
-              }`}>
-                {actionResult.status === 'ALLOWED' ? (
-                  <CheckCircle2 className="text-defense-green" size={20} />
-                ) : (
-                  <XCircle className="text-defense-red" size={20} />
-                )}
-              </div>
-              <div>
-                <h4 className={`text-sm font-black uppercase tracking-widest mb-1 ${
-                  actionResult.status === 'ALLOWED' ? 'text-defense-green' : 'text-defense-red'
-                }`}>
-                  Action {actionResult.status}
-                </h4>
-                <p className="text-white font-bold text-lg">{actionResult.reason || actionResult.message}</p>
-                {actionResult.data && (
-                  <div className="mt-4 grid grid-cols-1 gap-2">
-                    {actionResult.data.map(item => (
-                      <div key={item.id} className="text-xs bg-white/5 p-2 rounded-lg text-slate-400 font-mono">
-                        [{item.id}] {item.title} - {item.classification}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </motion.div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, idx) => (
-          <motion.div
-            key={stat.label}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: idx * 0.1 }}
-          >
-            <StatCard {...stat} />
-          </motion.div>
+    <div className="flex flex-col h-full bg-bg-base selection:bg-accent selection:text-white">
+      {/* Metric Strip */}
+      <div className="flex border-b border-border h-14 bg-bg-surface shrink-0">
+        {[
+          { label: 'TOTAL ACCESS', value: summary.totalPermissions || 0 },
+          { label: 'DIRECT RIGHTS', value: summary.directPermissions || 0 },
+          { label: 'INHERITED', value: summary.inheritedPermissions || 0 },
+          { label: 'CRITICAL AREAS', value: summary.byRiskLevel?.critical || 0 },
+          { label: 'LAST VERIFIED', value: 'NOW' }
+        ].map((stat, i) => (
+          <div key={i} className="flex-1 px-5 flex flex-col justify-center border-l border-border first:border-l-0">
+            <div className="text-[20px] font-mono font-bold text-primary leading-none">{stat.value}</div>
+            <div className="text-[9px] text-muted uppercase tracking-widest mt-1.5 font-bold leading-none">{stat.label}</div>
+          </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="lg:col-span-2 space-y-6"
-        >
-          <div className="glass p-8 rounded-3xl relative overflow-hidden">
-            <h3 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-              <CheckCircle2 className="text-defense-green" size={20} />
-              Assigned Operational Access
-            </h3>
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-0 overflow-hidden min-h-0">
+        {/* Left Column: Permission Table */}
+        <div className="w-[62%] border-r border-border flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-border bg-bg-surface/50 flex justify-between items-center">
+            <h3 className="text-[11px] font-bold text-primary uppercase tracking-wider">Active Permissions Matrix</h3>
+            <span className="text-[9px] text-muted font-bold uppercase">Showing {perms.length} entries</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-bg-surface z-10 border-b border-border">
+                <tr>
+                  <th className="px-5 py-3 text-[9px] font-bold text-muted uppercase tracking-widest">PERMISSION</th>
+                  <th className="px-5 py-3 text-[9px] font-bold text-muted uppercase tracking-widest">SOURCE</th>
+                  <th className="px-5 py-3 text-[9px] font-bold text-muted uppercase tracking-widest text-right">RISK LEVEL</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-[11px]">
+                {perms.map((perm, i) => (
+                  <tr key={i} className="border-b border-border-subtle hover:bg-bg-elevated transition-colors h-11">
+                    <td className="px-5 text-primary font-bold uppercase tracking-tight">{perm.name}</td>
+                    <td className="px-5 text-secondary">{perm.source} · LVL {perm.depth}</td>
+                    <td className="px-5 text-right">
+                      <div className="inline-flex items-center gap-2.5">
+                        <div className={`status-dot ${perm.riskLevel === 'critical' || perm.riskLevel === 'high' ? 'red' : perm.riskLevel === 'medium' ? 'amber' : 'green'}`} />
+                        <span className={`font-bold ${perm.riskLevel === 'critical' || perm.riskLevel === 'high' ? 'text-red-secure' : perm.riskLevel === 'medium' ? 'text-amber-secure' : 'text-green-secure'}`}>
+                          {perm.riskLevel?.toUpperCase()}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {(perms.direct || []).map((perm) => (
-                <div key={perm.name} className="flex items-center justify-between p-5 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-defense-primary/30 transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-2.5 h-2.5 rounded-full ${
-                      perm.riskLevel === 'critical' ? 'bg-defense-red shadow-[0_0_8px_rgba(239,68,68,0.3)]' : 'bg-defense-green shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                    }`} />
-                    <span className="font-mono text-sm text-slate-300 font-bold">{perm.name}</span>
-                  </div>
-                  <span className="text-[9px] uppercase font-black tracking-widest text-slate-600 group-hover:text-defense-primary transition-colors">Direct</span>
+        {/* Right Column: Panels */}
+        <div className="flex-1 flex flex-col overflow-y-auto bg-bg-base">
+          {/* Action Result (Dynamic Highlight) */}
+          <AnimatePresence>
+             {actionResult && (
+                <motion.div 
+                   initial={{ opacity: 0, height: 0 }}
+                   animate={{ opacity: 1, height: 'auto' }}
+                   exit={{ opacity: 0, height: 0 }}
+                   className={`p-6 border-b border-border ${actionResult.status === 'DENIED' ? 'threat-bg' : 'bg-green-secure/10 border-green-secure/20'}`}
+                >
+                   <div className="flex items-start gap-4">
+                      <div className={`w-10 h-10 flex items-center justify-center shrink-0 border ${actionResult.status === 'DENIED' ? 'border-red-secure/30 bg-red-secure/20 text-red-secure' : 'border-green-secure/30 bg-green-secure/20 text-green-secure'}`}>
+                         {actionResult.status === 'DENIED' ? <ShieldAlert size={20} className="animate-pulse" /> : <CheckCircle2 size={20} />}
+                      </div>
+                      <div>
+                         <h4 className={`text-sm font-bold uppercase tracking-widest mb-1 ${actionResult.status === 'DENIED' ? 'text-red-secure' : 'text-green-secure'}`}>
+                            {actionResult.status === 'DENIED' ? 'ACCESS VIOLATION' : 'AUTHORIZATION GRANTED'}
+                         </h4>
+                         <p className="text-[12px] font-mono italic opacity-80 leading-relaxed">
+                            "{actionResult.reason || 'Operation executed successfully.'}"
+                         </p>
+                      </div>
+                   </div>
+                </motion.div>
+             )}
+          </AnimatePresence>
+
+          {/* Session Integrity */}
+          <div className="p-6 border-b border-border bg-bg-surface">
+            <h3 className="section-label mb-5">SESSION INTEGRITY</h3>
+            <div className="space-y-4 font-mono text-[11px]">
+              <div className="flex justify-between items-center border-b border-border-subtle pb-2">
+                <div className="flex items-center gap-2">
+                   <Fingerprint size={12} className="text-muted" />
+                   <span className="text-secondary uppercase">Fingerprint</span>
                 </div>
-              ))}
-              {(perms.inherited || []).map((perm) => (
-                <div key={perm.name} className="flex items-center justify-between p-5 bg-slate-900/50 border border-slate-800 rounded-2xl hover:border-defense-yellow/30 transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-2.5 h-2.5 rounded-full bg-defense-yellow shadow-[0_0_8px_rgba(245,158,11,0.3)]" />
-                    <span className="font-mono text-sm text-slate-300 font-bold">{perm.name}</span>
-                  </div>
-                  <span className="text-[9px] uppercase font-black tracking-widest text-slate-600 group-hover:text-defense-yellow transition-colors">Inherited</span>
-                </div>
-              ))}
-            </div>
-            
-            {!(perms.direct?.length || perms.inherited?.length) && (
-              <div className="text-center py-12 text-slate-600">
-                <Info size={40} className="mx-auto mb-4 opacity-20" />
-                <p>No active operational permissions detected.</p>
+                <span className="text-primary font-bold">8f7a...c2d1</span>
               </div>
-            )}
-          </div>
-        </motion.div>
-
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
-          className="space-y-6"
-        >
-          <div className="glass p-8 rounded-3xl">
-            <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-              <ShieldAlert className="text-defense-primary" size={20} />
-              Assigned Roles
-            </h3>
-            <div className="space-y-3">
-              {(roles || []).map((role) => (
-                <div key={role} className="flex items-center gap-4 p-4 bg-slate-900/50 border border-slate-800 rounded-[20px] hover:bg-slate-800/50 transition-all cursor-default group">
-                  <div className="w-10 h-10 bg-defense-primary/5 rounded-xl flex items-center justify-center border border-defense-primary/10 group-hover:bg-defense-primary/10 transition-colors">
-                    <ShieldCheck className="text-defense-primary" size={20} />
-                  </div>
-                  <span className="text-sm font-bold text-slate-200 group-hover:text-white transition-colors">{role}</span>
+              <div className="flex justify-between items-center border-b border-border-subtle pb-2">
+                <div className="flex items-center gap-2">
+                   <Lock size={12} className="text-muted" />
+                   <span className="text-secondary uppercase">Token Type</span>
                 </div>
-              ))}
+                <span className="text-primary font-bold">ED25519_AUTH</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                   <ShieldCheck size={12} className="text-green-secure" />
+                   <span className="text-secondary uppercase">Binding Status</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="status-dot green pulse-dot" />
+                  <span className="text-green-secure font-bold uppercase tracking-wider">SECURE_ACTIVE</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-defense-primary p-8 rounded-[32px] shadow-2xl shadow-defense-primary/10 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
-            <h4 className="text-white font-bold text-xl mb-2 relative z-10">Need higher access?</h4>
-            <p className="text-indigo-100/80 text-sm mb-6 font-medium leading-relaxed relative z-10">
-              Submit a tactical clearance request to the command firewall for evaluation.
-            </p>
-            <Link to="/request" className="flex items-center justify-center gap-2 w-full py-4 bg-white text-defense-primary rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-50 transition-all active:scale-95 shadow-lg relative z-10">
-              Open Request Terminal
-              <ChevronRight size={14} />
-            </Link>
+          {/* User Info / Context */}
+          <div className="p-6 bg-bg-surface/30">
+             <div className="flex items-center gap-3 mb-4">
+                <Info size={14} className="text-accent" />
+                <span className="text-[10px] font-bold text-muted uppercase tracking-widest">Operator Context</span>
+             </div>
+             <p className="text-[11px] text-secondary leading-relaxed mb-6 font-medium">
+                Your current role inheritance level is <span className="text-primary font-bold uppercase">LVL {data?.role_level || 0}</span>. 
+                Tactical reports require multi-tenant authorization from STRAT_DEF_CMD.
+             </p>
+             <Link to="/request" className="btn-outline h-9 flex items-center justify-center gap-2 text-[10px] uppercase font-bold rounded-none">
+                ELEVATE CLEARANCE ⟶
+             </Link>
           </div>
-        </motion.div>
+        </div>
+      </div>
+
+      {/* Action Bar */}
+      <div className="h-14 border-t border-border bg-bg-surface flex items-center px-6 gap-4 shrink-0">
+        <span className="text-[9px] font-bold text-muted uppercase mr-2 tracking-widest">TACTICAL ACTIONS</span>
+        <button 
+          onClick={() => testAction('VIEW')}
+          className="btn-outline h-9 px-4 text-[10px] uppercase font-bold rounded-none"
+        >
+          GENERATE INTEL REPORT
+        </button>
+        <button 
+          onClick={() => testAction('UPDATE')}
+          className="btn-outline h-9 px-4 text-[10px] uppercase font-bold rounded-none"
+        >
+          UPDATE SATELLITE BINDING
+        </button>
+        <button 
+          onClick={() => testAction('DELETE')}
+          className="btn-outline h-9 px-4 text-[10px] uppercase font-bold border-red-secure text-red-secure hover:bg-red-dim rounded-none"
+        >
+          TERMINATE ALL SESSIONS
+        </button>
+        
+        {actionLoading && (
+           <div className="ml-auto flex items-center gap-2">
+              <div className="w-4 h-4 border border-accent border-t-transparent animate-spin rounded-full" />
+              <span className="text-[9px] font-mono text-accent uppercase animate-pulse">Requesting Clearance...</span>
+           </div>
+        )}
       </div>
     </div>
   );

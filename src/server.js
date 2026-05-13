@@ -1,89 +1,94 @@
-/**
- * Multi-Tenant SaaS Permission Escalation Firewall
- * Main server entry point.
- */
+require("dotenv").config();
 
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const morgan = require('morgan');
-const path = require('path');
-const { initDatabase, getConnection } = require('./database/connection');
-const { SCHEMA_SQL } = require('./database/schema');
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const path = require("path");
+
+const { initDatabase, getConnection } = require("./database/connection");
+const { ensureSchema } = require("./database/bootstrap");
+const { config } = require("./config");
 
 async function startServer() {
-  // Initialize database first
+  // 1) DB init
   const db = await initDatabase();
-  db.exec(SCHEMA_SQL);
-  db.save();
 
+  // 2) Ensure schema exists (idempotent)
+  await ensureSchema(db);
+
+  // 3) App init
   const app = express();
-  const PORT = process.env.PORT || 5000;
 
   // Middleware
-  app.set('trust proxy', true); // Enable IP resolution for device lockdown
-  app.use(cors({
-    origin: true,
-    credentials: true,
-  }));
+  app.set("trust proxy", true);
+  app.use(cors(config.cors));
   app.use(express.json());
-  app.use(morgan('dev'));
-  
-  // Serve static files from the frontend build directory
-  const frontendPath = path.join(__dirname, '..', 'frontend', 'dist');
+  app.use(morgan(config.env === "production" ? "combined" : "dev"));
+
+  // Static frontend
+  const frontendPath = path.join(__dirname, "..", "frontend", "dist");
   app.use(express.static(frontendPath));
 
-  // API Routes
-  app.use('/api/auth', require('./routes/auth'));
-  app.use('/api/roles', require('./routes/roles'));
-  app.use('/api/permissions', require('./routes/permissions'));
-  app.use('/api/resource', require('./routes/resource'));
-  app.use('/api/audit', require('./routes/audit'));
-  app.use('/api/firewall', require('./routes/audit'));
+  // API routes
+  app.use("/api/auth", require("./routes/auth"));
+  app.use("/api/roles", require("./routes/roles"));
+  app.use("/api/permissions", require("./routes/permissions"));
+  app.use("/api/resource", require("./routes/resource"));
+  app.use("/api/audit", require("./routes/audit"));
+  app.use("/api/firewall", require("./routes/firewall"));
+  app.use("/api/engine", require("./routes/engine"));
 
-  // Health Check
-  app.get('/api/health', (req, res) => {
+  // Health
+  app.get("/api/health", (req, res) => {
     const db = getConnection();
-    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-    const tenantCount = db.prepare('SELECT COUNT(*) as count FROM tenants').get();
-    const auditCount = db.prepare('SELECT COUNT(*) as count FROM audit_log').get();
+    const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get();
+    const tenantCount = db.prepare("SELECT COUNT(*) as count FROM tenants").get();
+    const auditCount = db.prepare("SELECT COUNT(*) as count FROM audit_log").get();
+
     res.json({
-      status: 'operational',
-      service: 'Multi-Tenant SaaS Permission Escalation Firewall',
-      version: '1.0.0',
+      status: "operational",
+      service: "SecureIT Authorization Engine",
+      version: "1.0.0",
       uptime: process.uptime(),
-      database: { users: userCount.count, tenants: tenantCount.count, auditEntries: auditCount.count },
+      database: {
+        users: userCount.count,
+        tenants: tenantCount.count,
+        auditEntries: auditCount.count,
+      },
       timestamp: new Date().toISOString(),
     });
   });
 
+  app.get("/api/my-ip", (req, res) => {
+    res.json({ ip: req.ip || req.connection.remoteAddress });
+  });
+
+  // API 404
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: "NOT_FOUND", message: "API endpoint not found." });
+  });
+
   // SPA catch-all
-  app.get('*', (req, res) => {
-    if (req.path.startsWith('/api')) {
-      res.status(404).json({ error: 'NOT_FOUND', message: 'API endpoint not found.' });
-    } else {
-      res.sendFile(path.join(frontendPath, 'index.html'));
-    }
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(frontendPath, "index.html"));
   });
 
   // Error handler
   app.use((err, req, res, next) => {
-    console.error('🔥 Error:', err);
-    res.status(500).json({ error: 'INTERNAL_ERROR', message: err.message });
+    console.error("🔥 Error:", err);
+    const message = config.env === "production" ? "Internal Server Error" : err.message;
+    res.status(500).json({ error: "INTERNAL_ERROR", message });
   });
 
-  app.listen(PORT, '127.0.0.1', () => {
-    console.log('\n══════════════════════════════════════════════════════');
-    console.log('  🛡️  Permission Escalation Firewall');
-    console.log('══════════════════════════════════════════════════════');
-    console.log(`  🌐 Server:     http://127.0.0.1:${PORT}`);
-    console.log(`  📊 Dashboard:  http://127.0.0.1:${PORT}`);
-    console.log(`  💚 Health:     http://127.0.0.1:${PORT}/api/health`);
-    console.log('══════════════════════════════════════════════════════\n');
+  // Listen
+  app.listen(config.port, config.host, () => {
+    console.log("Permission Escalation Firewall");
+    console.log(`Server: http://${config.host}:${config.port}`);
+    console.log(`Health: http://${config.host}:${config.port}/api/health`);
   });
 }
 
-startServer().catch(err => {
-  console.error('Failed to start server:', err);
+startServer().catch((err) => {
+  console.error("Failed to start server:", err);
   process.exit(1);
 });

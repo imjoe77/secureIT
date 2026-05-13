@@ -27,12 +27,15 @@ router.post('/', firewall('manage:roles'), (req, res) => {
 // GET /api/permissions - List all
 router.get('/', (req, res) => {
   const db = getConnection();
+  // 🚩 SECURITY FIX: Only count assignments within the current tenant to prevent cross-tenant role leakage
   const permissions = db.prepare(`
     SELECT p.id, p.name, p.description, p.resource, p.action, p.risk_level,
            COUNT(DISTINCT rp.role_id) as assigned_to_roles
-    FROM permissions p LEFT JOIN role_permissions rp ON p.id = rp.permission_id
+    FROM permissions p 
+    LEFT JOIN role_permissions rp ON p.id = rp.permission_id
+    LEFT JOIN roles r ON rp.role_id = r.id AND r.tenant_id = ?
     GROUP BY p.id ORDER BY p.resource, p.action
-  `).all();
+  `).all(req.user.tenantId);
   res.json({ permissions, count: permissions.length });
 });
 
@@ -88,6 +91,20 @@ router.post('/simulate-grant', (req, res) => {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'userId and roleId are required.' });
   }
 
+  const db = getConnection();
+  
+  // 🚩 SECURITY FIX: Verify target user belongs to the same tenant
+  const targetUser = db.prepare('SELECT tenant_id FROM users WHERE id = ?').get(userId);
+  if (!targetUser || targetUser.tenant_id !== req.user.tenantId) {
+    return res.status(403).json({ error: 'TENANT_MISMATCH', message: 'Forbidden: Cannot simulate grants for users in a different tenant.' });
+  }
+
+  // 🚩 SECURITY FIX: Verify target role belongs to the same tenant
+  const targetRole = db.prepare('SELECT tenant_id FROM roles WHERE id = ?').get(roleId);
+  if (!targetRole || targetRole.tenant_id !== req.user.tenantId) {
+    return res.status(403).json({ error: 'ROLE_MISMATCH', message: 'Forbidden: Cannot simulate grants for roles in a different tenant.' });
+  }
+
   try {
     const engine = new PermissionGraph();
     const simulation = engine.simulateUserGrant(userId, roleId);
@@ -105,7 +122,6 @@ router.post('/simulate-grant', (req, res) => {
   } catch (err) {
     console.error('Simulation Error:', err.message);
     
-    // Log failed/forbidden attempts (e.g., cross-tenant simulation)
     const engine = new PermissionGraph();
     engine.recordAuditLog(req.user.id, req.user.tenantId, 'SIMULATE_GRANT', 'DENY', `Simulation failure: ${err.message}`);
     

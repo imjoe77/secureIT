@@ -8,7 +8,9 @@ import {
   ShieldAlert, 
   ArrowRight,
   RefreshCw,
-  Database
+  Database,
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { permissionApi } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,7 +26,7 @@ const RequestAccess = () => {
     const loadPermissions = async () => {
       try {
         const response = await permissionApi.getPermissions();
-        setPermissions(response.data.permissions);
+        setPermissions(response.data.permissions || []);
       } catch (err) {
         console.error(err);
       }
@@ -40,11 +42,10 @@ const RequestAccess = () => {
       const response = await permissionApi.checkAccess(selectedPerm, targetTenantId || null);
       setResult(response.data.check);
     } catch (err) {
-      console.error(err);
       if (err.response?.data?.check) {
         setResult(err.response.data.check);
       } else {
-        setResult({ decision: 'DENY', message: 'Unknown tactical failure.' });
+        setResult({ decision: 'DENY', message: 'The system encountered an unexpected error validating your clearance path.' });
       }
     } finally {
       setLoading(false);
@@ -52,98 +53,75 @@ const RequestAccess = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div className="text-center">
-        <h2 className="text-4xl font-black text-white tracking-tight">Tactical Request Terminal</h2>
-        <p className="text-slate-400 font-medium mt-2">Evaluate operational clearance through the Permission Escalation Firewall</p>
+    <div className="flex flex-col h-full bg-bg-base">
+      <div className="p-6 border-b border-border bg-bg-surface shrink-0 flex justify-between items-end">
+         <div>
+            <h2 className="section-label">TACTICAL REQUEST TERMINAL</h2>
+            <p className="text-[11px] text-muted mt-1 uppercase tracking-wider">Evaluate operational clearance through the Permission Escalation Firewall</p>
+         </div>
+         <div className="flex items-center gap-2 text-accent font-bold text-[10px] uppercase">
+            <Info size={14} />
+            Auto-Audit Active
+         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-8">
-        <div className="md:col-span-2 space-y-6">
-          <div className="glass p-8 rounded-3xl">
-            <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-              <Terminal className="text-defense-primary" size={20} />
-              Parameters
-            </h3>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target Permission</label>
-                <div className="relative">
-                  <select 
-                    value={selectedPerm}
-                    onChange={(e) => setSelectedPerm(e.target.value)}
-                    className="w-full bg-defense-900 border border-white/10 text-white p-4 rounded-xl appearance-none focus:outline-none focus:ring-2 focus:ring-defense-primary/50 transition-all cursor-pointer font-bold"
-                  >
-                    <option value="">Select Resource...</option>
-                    {permissions.map((p) => (
-                      <option key={p.id} value={p.name}>{p.name}</option>
-                    ))}
-                  </select>
-                  <Search className="absolute right-4 top-4 text-slate-500 pointer-events-none" size={20} />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Target Tenant ID (Optional)</label>
-                <div className="relative">
-                  <input 
-                    type="text"
-                    value={targetTenantId}
-                    onChange={(e) => setTargetTenantId(e.target.value)}
-                    placeholder="Auto-detect (Current Tenant)"
-                    className="w-full bg-defense-900 border border-white/10 text-white p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-defense-primary/50 transition-all font-mono text-xs"
-                  />
-                  <Database className="absolute right-4 top-4 text-slate-500 pointer-events-none" size={20} />
-                </div>
-                <p className="text-[10px] text-slate-600 mt-2 italic">Leave blank to use your assigned command unit.</p>
-              </div>
-
-              <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-                <div className="flex items-center gap-2 mb-2">
-                  <Lock size={14} className="text-defense-primary" />
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Guard</span>
-                </div>
-                <p className="text-xs text-slate-500 leading-relaxed">
-                  Real-time BFS/DFS analysis will be performed on your role inheritance chain.
-                </p>
-              </div>
-
-              <button
-                onClick={handleRequest}
-                disabled={!selectedPerm || loading}
-                className="w-full btn-primary flex items-center justify-center gap-2 py-4 disabled:opacity-50 disabled:scale-100"
+      <div className="flex-1 flex min-h-0">
+        <div className="w-[340px] border-r border-border p-6 space-y-6 overflow-y-auto bg-bg-surface/30">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase text-secondary tracking-widest ml-1">TARGET RESOURCE</label>
+            <div className="relative">
+              <select 
+                value={selectedPerm}
+                onChange={(e) => setSelectedPerm(e.target.value)}
+                className="w-full input-flat cursor-pointer appearance-none pr-10 rounded-none"
               >
-                {loading ? (
-                  <RefreshCw className="animate-spin" size={20} />
-                ) : (
-                  <>
-                    Run Analysis
-                    <ArrowRight size={20} />
-                  </>
-                )}
-              </button>
+                <option value="">CHOOSE PERMISSION...</option>
+                {permissions.map((p) => (
+                  <option key={p.id} value={p.name}>{p.name.toUpperCase()}</option>
+                ))}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-muted text-[10px]">▼</div>
             </div>
           </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase text-secondary tracking-widest ml-1">ORGANIZATION ID (OPTIONAL)</label>
+            <input 
+              type="text"
+              value={targetTenantId}
+              onChange={(e) => setTargetTenantId(e.target.value)}
+              placeholder="CURRENT TENANT"
+              className="w-full input-flat rounded-none"
+            />
+          </div>
+
+          <div className="p-4 bg-bg-elevated border border-border">
+             <span className="text-[9px] text-muted uppercase font-bold block mb-2">Automated Check</span>
+             <p className="text-[11px] text-secondary leading-relaxed font-medium">
+               The system will trace your role hierarchy nodes to verify if the requested asset is within your tactical reach.
+             </p>
+          </div>
+
+          <button
+            onClick={handleRequest}
+            disabled={!selectedPerm || loading}
+            className="w-full btn-accent uppercase tracking-widest text-[11px] font-bold h-11 rounded-none disabled:opacity-50 transition-all active:scale-[0.98]"
+          >
+            {loading ? 'COMPUTING CLEARANCE...' : 'START ANALYSIS ⟶'}
+          </button>
         </div>
 
-        <div className="md:col-span-3 min-h-[400px]">
+        <div className="flex-1 bg-bg-base dot-grid relative overflow-hidden flex items-center justify-center p-12">
           <AnimatePresence mode="wait">
             {!result && !loading && (
               <motion.div 
                 key="empty"
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="glass rounded-3xl h-full border-dashed border-white/5 flex flex-col items-center justify-center text-center p-12"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center"
               >
-                <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center mb-6">
-                  <ShieldAlert className="text-slate-700" size={40} />
-                </div>
-                <h4 className="text-slate-500 font-bold">Terminal Awaiting Input</h4>
-                <p className="text-xs text-slate-600 mt-2 max-w-xs mx-auto">
-                  Select a tactical resource and initiate the firewall analysis to determine operational clearance.
-                </p>
+                <Terminal className="text-muted mx-auto mb-4 opacity-10" size={64} />
+                <span className="text-[10px] font-mono text-muted uppercase tracking-[0.3em] font-bold">Terminal Awaiting Pulse</span>
               </motion.div>
             )}
 
@@ -152,72 +130,53 @@ const RequestAccess = () => {
                 key="loading"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="glass rounded-3xl h-full flex flex-col items-center justify-center p-12"
+                className="text-center"
               >
-                <div className="relative w-24 h-24 mb-8">
-                  <div className="absolute inset-0 border-4 border-defense-primary/20 rounded-full" />
-                  <div className="absolute inset-0 border-4 border-defense-primary border-t-transparent rounded-full animate-spin" />
-                  <Terminal className="absolute inset-0 m-auto text-defense-primary" size={32} />
-                </div>
-                <h4 className="text-white font-black uppercase tracking-widest text-sm mb-2 animate-pulse">Analyzing Escalation Paths</h4>
-                <div className="w-48 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                  <motion.div 
-                    initial={{ x: '-100%' }}
-                    animate={{ x: '100%' }}
-                    transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
-                    className="w-1/2 h-full bg-defense-primary shadow-lg shadow-defense-primary/50"
-                  />
-                </div>
+                <div className="w-10 h-10 border-2 border-accent border-t-transparent animate-spin mx-auto mb-6" />
+                <span className="text-[10px] font-mono text-accent uppercase tracking-[0.2em] animate-pulse font-bold">Traversing Permission Graph...</span>
               </motion.div>
             )}
 
             {result && !loading && (
               <motion.div 
                 key="result"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className={`glass rounded-3xl h-full p-10 border-t-4 ${
-                  result.decision === 'ALLOW' ? 'border-defense-green' : 'border-defense-red'
-                }`}
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`w-full max-w-2xl border p-10 shadow-2xl ${result.decision === 'ALLOW' ? 'bg-bg-surface border-green-secure/30 shadow-green-secure/5' : 'threat-bg'}`}
               >
-                <div className="flex items-center gap-4 mb-8">
-                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${
-                    result.decision === 'ALLOW' ? 'bg-defense-green/10 text-defense-green' : 'bg-defense-red/10 text-defense-red'
-                  }`}>
-                    {result.decision === 'ALLOW' ? <CheckCircle2 size={36} /> : <XCircle size={36} />}
+                <div className="flex items-center gap-8 mb-10">
+                  <div className={`w-16 h-16 flex items-center justify-center border ${result.decision === 'ALLOW' ? 'bg-green-secure/10 text-green-secure border-green-secure/20' : 'bg-red-secure/20 text-red-secure border-red-secure/30 animate-pulse'}`}>
+                    {result.decision === 'ALLOW' ? <CheckCircle2 size={40} /> : <ShieldAlert size={40} />}
                   </div>
                   <div>
-                    <h4 className={`text-2xl font-black ${
-                      result.decision === 'ALLOW' ? 'text-defense-green' : 'text-defense-red'
-                    }`}>
-                      {result.decision === 'ALLOW' ? 'ACCESS GRANTED' : 'ACCESS DENIED'}
+                    <h4 className={`text-2xl font-bold uppercase tracking-tight ${result.decision === 'ALLOW' ? 'text-green-secure' : 'text-red-secure'}`}>
+                      {result.decision === 'ALLOW' ? 'ACCESS AUTHORIZED' : 'ACCESS DENIED'}
                     </h4>
-                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{selectedPerm}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                       <span className="text-[11px] font-mono text-secondary uppercase">RESOURCE:</span>
+                       <span className="text-[11px] font-mono font-bold text-primary uppercase bg-bg-elevated px-2 py-0.5 border border-border">{selectedPerm}</span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="space-y-6">
-                  <div className="p-6 bg-defense-900/50 border border-white/5 rounded-2xl">
-                    <p className="text-slate-300 text-sm leading-relaxed italic">
+                <div className="space-y-8">
+                  <div className={`p-6 border ${result.decision === 'ALLOW' ? 'bg-bg-elevated border-border' : 'bg-red-secure/5 border-red-secure/20'}`}>
+                    <p className={`text-[14px] font-mono leading-relaxed italic ${result.decision === 'ALLOW' ? 'text-primary' : 'text-red-secure font-bold'}`}>
                       "{result.message || result.reason}"
                     </p>
                   </div>
 
-                  {result.accessPath && (
+                  {result.accessPath && result.accessPath.length > 0 && (
                     <div className="space-y-4">
-                      <div className="flex items-center gap-2">
-                        <ArrowRight size={14} className="text-defense-primary" />
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Escalation Path Detection</span>
-                      </div>
+                      <span className="section-label-sm">TACTICAL ESCALATION PATH</span>
                       <div className="flex flex-wrap items-center gap-3">
                         {result.accessPath.map((node, i) => (
                           <React.Fragment key={i}>
-                            <div className="px-4 py-2 bg-white/5 border border-white/5 rounded-lg text-xs font-bold text-white">
+                            <div className={`px-4 py-2 border text-[11px] font-mono font-bold uppercase ${result.decision === 'ALLOW' ? 'bg-bg-elevated border-border text-primary' : 'bg-red-secure/10 border-red-secure/30 text-red-secure'}`}>
                               {node}
                             </div>
                             {i < result.accessPath.length - 1 && (
-                              <ArrowRight size={16} className="text-slate-700" />
+                              <ArrowRight size={16} className={result.decision === 'ALLOW' ? 'text-muted' : 'text-red-secure opacity-50'} />
                             )}
                           </React.Fragment>
                         ))}
@@ -225,17 +184,15 @@ const RequestAccess = () => {
                     </div>
                   )}
 
-                  {result.decision === 'DENY' && result.code === 'INDIRECT_ESCALATION_BLOCKED' && (
-                    <div className="p-4 bg-defense-red/10 border border-defense-red/20 rounded-xl flex items-start gap-3">
-                      <ShieldAlert className="text-defense-red mt-0.5" size={18} />
-                      <div>
-                        <p className="text-defense-red text-xs font-bold uppercase mb-1">Firewall Rule Triggered</p>
-                        <p className="text-defense-red/70 text-xs leading-relaxed">
-                          The system detected an unauthorized indirect access chain. Strategic depth limits prevent this role from reaching the requested intelligence asset.
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between pt-6 border-t border-border-subtle">
+                     <span className="text-[10px] font-mono text-muted uppercase tracking-widest">Verification ID: {Math.random().toString(36).substring(7).toUpperCase()}</span>
+                     {result.decision === 'DENY' && (
+                        <div className="flex items-center gap-2 text-red-secure font-bold text-[10px] uppercase">
+                           <AlertTriangle size={14} />
+                           Firewall Intercepted
+                        </div>
+                     )}
+                  </div>
                 </div>
               </motion.div>
             )}

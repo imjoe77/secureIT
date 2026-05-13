@@ -7,21 +7,41 @@ export default {
   theme: {
     extend: {
       colors: {
-        defense: {
-          900: '#0a0e1a',
-          800: '#0f1428',
-          700: '#1e293b',
-          600: '#334155',
-          500: '#475569',
-          primary: '#6366f1',
-          cyan: '#06b6d4',
-          green: '#10b981',
-          yellow: '#f59e0b',
-          red: '#ef4444',
-        }
+        'bg-base': '#08090c',
+        'bg-surface': '#0f1117',
+        'bg-elevated': '#161820',
+        'border': '#1c1f2e',
+        'border-subtle': '#13151f',
+        'accent': '#4f6ef7',
+        'accent-dim': '#1e2a6e',
+        'primary': '#e2e8f0',
+        'secondary': '#64748b',
+        'muted': '#374151',
+        'green-secure': '#16a34a',
+        'amber-secure': '#d97706',
+        'red-secure': '#dc2626',
+        'red-dim': '#3b0f0f',
       },
-      backgroundImage: {
-        'defense-gradient': 'radial-gradient(circle at center, #0f1428 0%, #0a0e1a 100%)',
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+      fontSize: {
+        'xxs': '10px',
+      },
+      spacing: {
+        '1': '4px',
+        '2': '8px',
+        '3': '12px',
+        '4': '16px',
+        '5': '20px',
+        '6': '24px',
+      },
+      borderRadius: {
+        'none': '0',
+        'sm': '2px',
+        'DEFAULT': '4px',
+        'md': '6px',
       }
     },
   },

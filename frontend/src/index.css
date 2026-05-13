@@ -2,30 +2,172 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg-base: #08090c;
+  --bg-surface: #0f1117;
+  --bg-elevated: #161820;
+  --border: #1c1f2e;
+  --border-subtle: #13151f;
+  --accent: #4f6ef7;
+  --accent-dim: #1e2a6e;
+  --text-primary: #e2e8f0;
+  --text-secondary: #64748b;
+  --text-muted: #374151;
+  --green: #16a34a;
+  --amber: #d97706;
+  --red: #dc2626;
+  --red-dim: #3b0f0f;
+}
+
 @layer base {
   body {
-    @apply bg-defense-900 text-slate-200 min-h-screen font-sans;
-    background-image: 
-      radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.03) 0%, transparent 40%),
-      radial-gradient(circle at 100% 100%, rgba(6, 182, 212, 0.02) 0%, transparent 40%);
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
   }
 }
 
 @layer components {
-  .glass {
-    @apply bg-defense-800 border border-slate-700/50 shadow-lg;
+  .card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   }
-  
-  .btn-primary {
-    @apply px-6 py-2.5 bg-defense-primary hover:bg-indigo-500 text-white font-semibold rounded-xl transition-all duration-200 active:scale-95 shadow-lg shadow-defense-primary/10;
+
+  .section-label {
+    @apply text-[11px] font-bold text-muted uppercase tracking-[0.15em] mb-3 block;
   }
-  
-  .btn-ghost {
-    @apply px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-all;
+
+  .section-label-sm {
+    @apply text-[9px] font-bold text-muted uppercase tracking-[0.1em] block;
   }
-  
-  .badge {
-    @apply px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest border;
+
+  /* Warning / Error States */
+  .threat-bg {
+    background-color: rgba(220, 38, 38, 0.1);
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    color: #dc2626;
+    background-image: repeating-linear-gradient(45deg, rgba(220, 38, 38, 0.05), rgba(220, 38, 38, 0.05) 10px, transparent 10px, transparent 20px);
+  }
+
+  .threat-text {
+    color: #dc2626;
+    font-weight: 700;
+    animation: pulse 2s infinite;
+  }
+
+  .status-tag {
+    padding: 2px 8px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border: 1px solid;
+    border-radius: 2px;
+    display: inline-block;
+  }
+
+  .status-tag-red {
+    border-color: rgba(220, 38, 38, 0.4);
+    background-color: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+  }
+
+  .status-tag-green {
+    border-color: rgba(22, 163, 74, 0.4);
+    background-color: rgba(22, 163, 74, 0.1);
+    color: #16a34a;
+  }
+
+  .input-flat {
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    height: 40px;
+    padding: 0 12px;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .input-flat:focus {
+    border-color: var(--accent);
+  }
+
+  .btn-accent {
+    background-color: var(--accent);
+    color: white;
+    font-size: 12px;
+    font-weight: 500;
+    height: 40px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: filter 150ms ease;
+    border-radius: 4px;
+  }
+
+  .btn-accent:hover {
+    filter: brightness(1.1);
+  }
+
+  .btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 500;
+    height: 40px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 150ms ease;
+    border-radius: 4px;
+  }
+
+  .btn-outline:hover {
+    background-color: var(--bg-elevated);
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .status-dot.green { background-color: var(--green); }
+  .status-dot.amber { background-color: var(--amber); }
+  .status-dot.red { background-color: var(--red); }
+
+  .pulse-dot {
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.4); opacity: 0.7; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .dot-grid {
+    background-image: radial-gradient(var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
   }
 }
 

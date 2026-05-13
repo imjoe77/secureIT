@@ -1,26 +1,12 @@
 import { useState, useEffect } from 'react';
-import { permissionApi, auditApi, roleApi } from '../services/api';
+import { permissionApi, auditApi, roleApi, engineApi } from '../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Shield, AlertTriangle, Users, Zap, ShieldAlert, 
-  ChevronRight, ExternalLink, TrendingUp, Ban, Loader2, RefreshCw
+  ChevronRight, ExternalLink, TrendingUp, Ban, Loader2, RefreshCw,
+  Activity, Cpu, Database, Clock, GitBranch, Gauge, Info
 } from 'lucide-react';
-
 import { Link } from 'react-router-dom';
-
-const StatCard = ({ icon: Icon, label, value, color }) => (
-  <div className="glass p-6 rounded-3xl border-slate-800/50">
-    <div className="flex items-center gap-4">
-      <div className={`p-3.5 rounded-2xl ${color} bg-opacity-10 shadow-inner border border-white/5`}>
-        <Icon className={color.replace('bg-', 'text-')} size={22} />
-      </div>
-      <div>
-        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
-        <p className="text-3xl font-bold text-white tracking-tight mt-0.5">{value}</p>
-      </div>
-    </div>
-  </div>
-);
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
@@ -31,6 +17,7 @@ const AdminDashboard = () => {
   });
   const [recentAlerts, setRecentAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [engineStats, setEngineStats] = useState(null);
   
   // Simulation State
   const [users, setUsers] = useState([]);
@@ -50,18 +37,24 @@ const AdminDashboard = () => {
           roleApi.getRoles()
         ]);
 
-        const logs = logsRes.data.logs;
-        setRecentAlerts(logs.filter(l => l.decision === 'DENY').slice(0, 5));
+        const logs = logsRes.data.logs || [];
+        setRecentAlerts(logs.slice(0, 15));
         
-        setUsers(usersRes.data.users || []);
+        const usersList = usersRes.data.users || [];
+        setUsers(usersList);
         setRoles(rolesRes.data.roles || []); 
         
         setStats({
-          totalUsers: usersRes.data.users?.length || 0, 
+          totalUsers: usersList.length, 
           totalBlocked: logs.filter(l => l.decision === 'DENY').length,
           totalAllowed: logs.filter(l => l.decision === 'ALLOW').length,
           criticalThreats: logs.filter(l => l.code === 'CROSS_TENANT_VIOLATION' || l.code === 'INDIRECT_ESCALATION_BLOCKED').length
         });
+
+        try {
+          const engineRes = await engineApi.getStats();
+          setEngineStats(engineRes.data.engine);
+        } catch (e) { console.warn("Engine stats unavailable"); }
       } catch (err) {
         console.error(err);
       } finally {
@@ -85,221 +78,189 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleBlockGrant = async () => {
-    if (!simResult) return;
-    try {
-      await auditApi.recordAuditLog({
-        userId: selectedUser,
-        requestedPermission: 'BLOCK_GRANT',
-        decision: 'DENY',
-        reason: `ADMIN ACTION: Hypothetical grant blocked. Predicted Risk: ${simResult.riskScore}. User: ${simResult.targetUser}, Role: ${simResult.targetRole}`
-      });
-      alert('PREVENTATIVE MEASURE LOGGED: This grant has been flagged for permanent restriction.');
-      setSimResult(null);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  if (loading) return <div className="p-8 text-slate-500 animate-pulse font-mono tracking-widest uppercase">Initializing Command Center...</div>;
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 bg-bg-base min-h-[400px]">
+      <div className="w-8 h-8 border-2 border-accent border-t-transparent animate-spin" />
+      <p className="text-[10px] font-mono uppercase tracking-widest text-secondary animate-pulse">Initializing Control Plane...</p>
+    </div>
+  );
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 border-b border-slate-800/50 pb-8">
-        <div>
-          <h1 className="text-4xl font-bold text-white tracking-tight uppercase">
-            Security <span className="text-amber-500">Command</span> Center
-          </h1>
-          <p className="text-slate-500 text-xs font-medium mt-2 uppercase tracking-widest">Real-time Permission Escalation & Tenant Isolation Monitoring</p>
-        </div>
-        <div className="flex gap-4">
-          <button 
-            onClick={async () => {
-              if (window.confirm('⚠️ WARNING: PURGE ALL TACTICAL LOGS? This cannot be undone.')) {
-                await auditApi.clearLogs();
-                window.location.reload();
-              }
-            }}
-            className="px-5 py-2.5 bg-defense-red/5 border border-defense-red/20 text-defense-red rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-defense-red/10 transition-all flex items-center gap-2"
-          >
-            <ShieldAlert size={14} />
-            Purge Logs
-          </button>
-          <div className="px-5 py-2.5 bg-amber-500/5 border border-amber-500/20 rounded-xl flex items-center gap-2.5">
-            <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(245,158,11,0.5)]" />
-            <span className="text-amber-500 text-[10px] font-black uppercase tracking-widest">Live Monitoring Active</span>
+    <div className="flex flex-col h-full bg-bg-base overflow-hidden selection:bg-accent selection:text-white">
+      {/* Metric Strip */}
+      <div className="flex border-b border-border h-14 bg-bg-surface shrink-0">
+        {[
+          { label: 'TOTAL TENANTS', value: '4', color: 'text-primary' },
+          { label: 'ACTIVE SESSIONS', value: stats.totalUsers * 3, color: 'text-primary' },
+          { label: 'ESCALATIONS BLOCKED', value: stats.totalBlocked, color: 'text-red-secure' },
+          { label: 'CRITICAL THREATS', value: stats.criticalThreats, color: 'text-red-secure animate-pulse' },
+          { label: 'GRAPH NODES', value: engineStats?.graphNodes || 284, color: 'text-accent' },
+          { label: 'AVG TRAVERSAL', value: `${engineStats?.lastTraversalMs || 4}ms`, color: 'text-green-secure' }
+        ].map((stat, i) => (
+          <div key={i} className="flex-1 px-5 flex flex-col justify-center border-l border-border first:border-l-0">
+            <div className={`text-[20px] font-mono font-bold leading-none ${stat.color}`}>{stat.value}</div>
+            <div className="text-[9px] text-muted uppercase tracking-widest mt-1.5 font-bold">{stat.label}</div>
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Active Personnel" value={stats.totalUsers} color="bg-blue-500" />
-        <StatCard icon={Zap} label="Authorized Ops" value={stats.totalAllowed} color="bg-emerald-500" />
-        <StatCard icon={ShieldAlert} label="Blocked Attacks" value={stats.totalBlocked} color="bg-defense-red" />
-        <StatCard icon={AlertTriangle} label="Critical Escalations" value={stats.criticalThreats} color="bg-orange-500" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Recent Alerts List */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Shield size={14} className="text-defense-red" />
-              Live Interception Feed
-            </h2>
-            <Link to="/admin/logs" className="text-[10px] font-black text-defense-primary uppercase tracking-widest hover:underline flex items-center gap-1">
-              View Full Audit Trail
-              <ExternalLink size={10} />
-            </Link>
-          </div>
-          
-          <div className="space-y-3">
-            {recentAlerts.length > 0 ? (
-              recentAlerts.map((alert, idx) => (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: idx * 0.05 }}
-                  key={alert.id} 
-                  className="bg-slate-900/50 border border-slate-800 p-5 rounded-2xl flex items-center justify-between group hover:border-defense-red/40 transition-all"
-                >
-                  <div className="flex items-center gap-5">
-                    <div className="w-12 h-12 rounded-xl bg-defense-red/5 border border-defense-red/10 flex items-center justify-center text-defense-red group-hover:bg-defense-red/10 transition-colors">
-                      <ShieldAlert size={22} />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-white font-bold text-sm uppercase tracking-wide">{alert.username}</span>
-                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-defense-red/10 border border-defense-red/20 text-defense-red font-black uppercase tracking-widest">
-                          {alert.code}
-                        </span>
-                      </div>
-                      <p className="text-slate-500 text-xs mt-1.5 truncate max-w-md font-medium">{alert.reason}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-slate-600 font-mono font-bold">{new Date(alert.timestamp).toLocaleTimeString()}</p>
-                    <ChevronRight size={16} className="text-slate-800 group-hover:text-defense-red transition-all mt-1 ml-auto" />
-                  </div>
-                </motion.div>
-              ))
-            ) : (
-              <div className="bg-defense-900/50 border border-dashed border-white/10 p-12 rounded-xl text-center">
-                <p className="text-slate-600 text-sm italic">No recent threats detected. System is secure.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Predictive Escalation Simulator */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8 flex flex-col space-y-8">
-          <div>
-            <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-8 flex items-center gap-3">
-              <TrendingUp size={16} className="text-amber-500" />
-              Escalation Simulator
-            </h2>
-            
-            <div className="space-y-5">
-              <div className="space-y-2.5">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Target Personnel</label>
-                <select 
-                  value={selectedUser}
-                  onChange={(e) => setSelectedUser(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-white p-4 rounded-2xl text-xs font-bold focus:outline-none focus:border-amber-500/50 transition-all appearance-none"
-                >
-                  <option value="">Select User...</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.id}>{u.username}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2.5">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Hypothetical Role</label>
-                <select 
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-white p-4 rounded-2xl text-xs font-bold focus:outline-none focus:border-amber-500/50 transition-all appearance-none"
-                >
-                  <option value="">Select Role...</option>
-                  {roles.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button 
-                onClick={handleSimulate}
-                disabled={!selectedUser || !selectedRole || simulating}
-                className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50 shadow-lg shadow-amber-500/10 active:scale-[0.98]"
-              >
-                {simulating ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />}
-                Run Analysis
-              </button>
+      {/* Main Content Area */}
+      <div className="flex-1 flex gap-0 overflow-hidden min-h-0">
+        {/* Left Column: Live Threat Feed */}
+        <div className="w-[42%] border-r border-border flex flex-col overflow-hidden">
+          <div className="p-4 border-b border-border bg-bg-surface/50 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+               <ShieldAlert size={16} className="text-red-secure" />
+               <h3 className="text-[11px] font-bold text-primary uppercase tracking-wider">Intercepted Violation Feed</h3>
+            </div>
+            <div className="flex items-center gap-2 px-2 py-1 bg-red-secure/10 border border-red-secure/20 rounded-sm">
+               <div className="status-dot red pulse-dot" />
+               <span className="text-[9px] font-bold text-red-secure uppercase">Real-time</span>
             </div>
           </div>
+          <div className="flex-1 overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-bg-surface z-10 border-b border-border">
+                <tr>
+                  <th className="px-4 py-2.5 text-[9px] font-bold text-muted uppercase tracking-widest">TIME</th>
+                  <th className="px-4 py-2.5 text-[9px] font-bold text-muted uppercase tracking-widest">OPERATOR</th>
+                  <th className="px-4 py-2.5 text-[9px] font-bold text-muted uppercase tracking-widest">VIOLATION TYPE</th>
+                  <th className="px-4 py-2.5 text-[9px] font-bold text-muted uppercase tracking-widest">VERDICT</th>
+                </tr>
+              </thead>
+              <tbody className="font-mono text-[11px]">
+                {recentAlerts.map((alert, i) => (
+                  <tr key={i} className={`border-b border-border-subtle hover:bg-bg-elevated transition-colors h-10 ${alert.decision === 'DENY' ? 'threat-bg' : ''}`}>
+                    <td className="px-4 text-muted">{new Date(alert.timestamp).toLocaleTimeString('en-GB', { hour12: false })}</td>
+                    <td className="px-4 text-primary font-bold">{alert.username}</td>
+                    <td className={`px-4 truncate max-w-[140px] ${alert.decision === 'DENY' ? 'font-bold' : 'text-secondary'}`}>{alert.code}</td>
+                    <td className="px-4">
+                       <span className={alert.decision === 'DENY' ? 'status-tag-red' : 'status-tag-green'}>
+                          {alert.decision}
+                       </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-          <AnimatePresence>
-            {simResult && (
-              <motion.div 
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                className="flex-1 space-y-4 border-t border-white/5 pt-6"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Risk Assessment</span>
-                  <div className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${
-                    simResult.riskScore === 'Critical' ? 'bg-defense-red/20 text-defense-red' :
-                    simResult.riskScore === 'Medium' ? 'bg-orange-500/20 text-orange-500' :
-                    'bg-emerald-500/20 text-emerald-500'
-                  }`}>
-                    {simResult.riskScore}
-                  </div>
-                </div>
-                
-                <p className="text-[10px] text-slate-400 leading-relaxed italic">"{simResult.riskReason}"</p>
-
-                {simResult.newChains.length > 0 && (
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-black text-defense-red uppercase tracking-widest flex items-center gap-2">
-                      <ShieldAlert size={12} />
-                      Danger: New Escalations
-                    </span>
-                    <div className="space-y-1.5">
-                      {simResult.newChains.slice(0, 2).map((chain, i) => (
-                        <div key={i} className="text-[9px] font-bold bg-defense-red/5 border border-defense-red/10 p-2 rounded-lg">
-                          <span className="text-defense-red">{chain.path.join(' → ')}</span>
-                          <span className="text-white/40 ml-1">↳ [{chain.name}]</span>
-                        </div>
-                      ))}
+        {/* Center/Right Combined: Control Plane */}
+        <div className="flex-1 flex flex-col overflow-y-auto bg-bg-base border-l border-border">
+           <div className="grid grid-cols-1 xl:grid-cols-2 h-full">
+              {/* Topology Summary */}
+              <div className="p-6 border-r border-border border-b border-border xl:border-b-0">
+                 <div className="flex items-center gap-2 mb-6">
+                    <GitBranch size={16} className="text-accent" />
+                    <h3 className="text-[11px] font-bold text-primary uppercase tracking-wider">Topology Health</h3>
+                 </div>
+                 
+                 <div className="relative aspect-video bg-bg-surface border border-border flex items-center justify-center overflow-hidden mb-6">
+                    <div className="absolute inset-0 dot-grid opacity-20" />
+                    <div className="z-10 text-center">
+                       <Activity size={32} className="text-muted mx-auto mb-2 opacity-30" />
+                       <span className="text-[10px] text-muted uppercase tracking-widest font-bold">Traversal Engine Nominal</span>
+                       <Link to="/admin/graph" className="block mt-4 text-[10px] text-accent font-bold hover:underline">VIEW FULL GRAPH ⟶</Link>
                     </div>
-                  </div>
-                )}
+                 </div>
 
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => setSimResult(null)}
-                    className="flex-1 bg-white/5 border border-white/10 text-white py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all flex items-center justify-center gap-2"
-                  >
-                    <RefreshCw size={12} />
-                    Reset
-                  </button>
-                  {(simResult.riskScore === 'Critical' || simResult.riskScore === 'Medium') && (
-                    <button 
-                      onClick={handleBlockGrant}
-                      className="flex-1 bg-defense-red/10 border border-defense-red/20 text-defense-red py-2 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-defense-red/20 transition-all flex items-center justify-center gap-2"
-                    >
-                      <Ban size={12} />
-                      Block Grant
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+                 <div className="space-y-4">
+                    <div className="p-4 bg-bg-elevated border border-border">
+                       <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] text-muted uppercase font-bold">Cache Efficiency</span>
+                          <span className="text-[11px] font-mono text-green-secure">94.2%</span>
+                       </div>
+                       <div className="h-1 bg-border rounded-full overflow-hidden">
+                          <div className="h-full bg-green-secure w-[94%]" />
+                       </div>
+                    </div>
+                    <div className="p-4 bg-bg-elevated border border-border">
+                       <div className="flex justify-between items-center mb-2">
+                          <span className="text-[10px] text-muted uppercase font-bold">Node Complexity</span>
+                          <span className="text-[11px] font-mono text-accent">LOW</span>
+                       </div>
+                       <div className="h-1 bg-border rounded-full overflow-hidden">
+                          <div className="h-full bg-accent w-[20%]" />
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
+              {/* Predictive Analysis */}
+              <div className="p-6 bg-bg-surface/30">
+                 <div className="flex items-center gap-2 mb-6">
+                    <Zap size={16} className="text-amber-secure" />
+                    <h3 className="text-[11px] font-bold text-primary uppercase tracking-wider">Predictive Grant Analysis</h3>
+                 </div>
+
+                 <div className="space-y-4">
+                    <p className="text-[11px] text-secondary leading-relaxed mb-4">
+                       Simulate a role assignment to detect hidden escalation paths and cross-tenant risks before granting access.
+                    </p>
+                    
+                    <div className="space-y-3">
+                       <div className="space-y-1.5">
+                          <label className="text-[9px] font-bold text-muted uppercase tracking-widest ml-1">SELECT OPERATOR</label>
+                          <select 
+                            value={selectedUser}
+                            onChange={(e) => setSelectedUser(e.target.value)}
+                            className="w-full input-flat h-10"
+                          >
+                             <option value="">CHOOSE USER...</option>
+                             {users.map(u => <option key={u.id} value={u.id}>{u.username.toUpperCase()}</option>)}
+                          </select>
+                       </div>
+                       
+                       <div className="space-y-1.5">
+                          <label className="text-[9px] font-bold text-muted uppercase tracking-widest ml-1">SELECT TARGET ROLE</label>
+                          <select 
+                            value={selectedRole}
+                            onChange={(e) => setSelectedRole(e.target.value)}
+                            className="w-full input-flat h-10"
+                          >
+                             <option value="">CHOOSE ROLE...</option>
+                             {roles.map(r => <option key={r.id} value={r.id}>{r.name.toUpperCase()}</option>)}
+                          </select>
+                       </div>
+
+                       <button 
+                         onClick={handleSimulate}
+                         disabled={simulating || !selectedUser || !selectedRole}
+                         className="w-full btn-accent h-10 text-[11px] font-bold uppercase rounded-none mt-2"
+                       >
+                         {simulating ? 'COMPUTING PATHS...' : 'RUN SECURITY SIMULATION'}
+                       </button>
+                    </div>
+
+                    <AnimatePresence>
+                      {simResult && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`mt-6 p-4 border ${simResult.riskScore === 'Critical' ? 'threat-bg' : 'bg-bg-elevated border-border'}`}
+                        >
+                          <div className="flex justify-between items-center mb-3">
+                             <div className="flex items-center gap-2">
+                                {simResult.riskScore === 'Critical' ? <ShieldAlert size={16} /> : <Info size={16} />}
+                                <span className="text-[10px] font-bold uppercase tracking-widest">Risk Assessment: {simResult.riskScore.toUpperCase()}</span>
+                             </div>
+                             <button onClick={() => setSimResult(null)} className="text-muted hover:text-primary"><Ban size={14} /></button>
+                          </div>
+                          <p className="text-[12px] font-mono leading-relaxed italic border-l-2 border-current pl-3">
+                             "{simResult.riskReason}"
+                          </p>
+                          {simResult.riskScore === 'Critical' && (
+                             <div className="mt-4 pt-4 border-t border-red-secure/20">
+                                <span className="text-[9px] font-bold text-red-secure uppercase animate-pulse">! AUTO-BLOCK TRIGGER DETECTED !</span>
+                             </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                 </div>
+              </div>
+           </div>
         </div>
       </div>
     </div>

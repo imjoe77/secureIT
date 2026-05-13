@@ -7,7 +7,8 @@ import {
   XCircle,
   Clock,
   User,
-  Activity
+  Activity,
+  ArrowRight
 } from 'lucide-react';
 import { auditApi } from '../services/api';
 import { motion } from 'framer-motion';
@@ -22,7 +23,7 @@ const AuditLog = () => {
       setLoading(true);
       try {
         const response = await auditApi.getLogs(filter !== 'all' ? filter : null);
-        setLogs(response.data.logs);
+        setLogs(response.data.logs || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -33,135 +34,113 @@ const AuditLog = () => {
   }, [filter]);
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+    <div className="flex flex-col h-full bg-bg-base">
+      <div className="p-6 border-b border-border bg-bg-surface shrink-0 flex justify-between items-end">
         <div>
-          <h2 className="text-3xl font-black text-white tracking-tight">Theater Audit Trail</h2>
-          <p className="text-slate-400 font-medium">Forensic tracking of all operational access requests</p>
+          <h2 className="section-label">THEATER AUDIT TRAIL</h2>
+          <p className="text-[11px] text-muted mt-1 uppercase tracking-wider">Forensic tracking of all operational access requests</p>
         </div>
         
-        <div className="flex items-center gap-2 bg-defense-800 p-1.5 rounded-2xl border border-white/5">
+        <div className="flex items-center bg-bg-elevated border border-border">
           {['all', 'ALLOW', 'DENY'].map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+              className={`px-4 py-1.5 text-[10px] font-bold uppercase tracking-widest transition-all ${
                 filter === f 
-                  ? 'bg-defense-primary text-white shadow-lg shadow-defense-primary/20' 
-                  : 'text-slate-500 hover:text-white'
+                  ? 'bg-accent text-white' 
+                  : 'text-secondary hover:text-primary'
               }`}
             >
-              {f === 'all' ? 'Everything' : f === 'ALLOW' ? 'Authorized' : 'Intercepted'}
+              {f === 'all' ? 'ALL' : f === 'ALLOW' ? 'AUTHORIZED' : 'DENIED'}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="glass rounded-[32px] overflow-hidden border border-white/5">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-white/5 bg-white/5">
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Personnel / ID</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Resource Requested</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Decision</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Reason / Forensics</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Timestamp</th>
-                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Escalation Path</th>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="sticky top-0 bg-bg-surface z-10">
+              <tr className="border-b border-border">
+                <th className="px-6 py-3 section-label font-medium">PERSONNEL</th>
+                <th className="px-6 py-3 section-label font-medium">RESOURCE</th>
+                <th className="px-6 py-3 section-label font-medium">VERDICT</th>
+                <th className="px-6 py-3 section-label font-medium">REASON / FORENSICS</th>
+                <th className="px-6 py-3 section-label font-medium">TIMESTAMP</th>
+                <th className="px-6 py-3 section-label font-medium">ESCALATION PATH</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="font-mono text-[11px] divide-y divide-border-subtle">
               {loading ? (
-                Array(5).fill(0).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td colSpan="6" className="px-8 py-6">
-                      <div className="h-4 bg-white/5 rounded w-full" />
-                    </td>
+                Array(10).fill(0).map((_, i) => (
+                  <tr key={i} className="animate-pulse h-10">
+                    <td colSpan="6" className="px-6"><div className="h-2 bg-bg-elevated w-full" /></td>
                   </tr>
                 ))
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-8 py-16 text-center text-slate-600">
-                    <Activity size={40} className="mx-auto mb-4 opacity-10" />
-                    <p>No operational logs matching current parameters.</p>
+                  <td colSpan="6" className="px-6 py-12 text-center text-muted">
+                    <Activity size={32} className="mx-auto mb-4 opacity-10" />
+                    <p className="uppercase tracking-[0.2em]">NO LOGS MATCHING PARAMETERS</p>
                   </td>
                 </tr>
               ) : (
                 logs.map((log, idx) => (
-                  <motion.tr 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
+                  <tr 
                     key={log.id} 
-                    className="hover:bg-white/5 transition-colors group"
+                    className={`hover:bg-bg-elevated transition-colors h-10 ${log.decision === 'DENY' ? 'bg-red-dim/5' : ''}`}
                   >
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-defense-800 rounded-lg flex items-center justify-center text-defense-primary border border-white/5">
-                          <User size={16} />
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-white leading-none mb-1">{log.username || 'System'}</p>
-                          <p className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">{log.tenant_name}</p>
-                        </div>
-                      </div>
+                    <td className="px-6 py-2">
+                       <div className="flex flex-col">
+                          <span className="text-primary font-bold">{log.username || 'SYSTEM'}</span>
+                          <span className="text-[9px] text-muted uppercase">{log.tenant_name}</span>
+                       </div>
                     </td>
-                    <td className="px-8 py-6">
+                    <td className="px-6 py-2 text-secondary uppercase">{log.requested_permission}</td>
+                    <td className="px-6 py-2">
                       <div className="flex items-center gap-2">
-                        <FileText size={14} className="text-slate-500" />
-                        <span className="font-mono text-xs font-bold text-slate-300">{log.requested_permission}</span>
+                        <div className={`status-dot ${log.decision === 'ALLOW' ? 'green' : 'red'}`} />
+                        <span className={`font-bold ${log.decision === 'ALLOW' ? 'text-green-secure' : 'text-red-secure'}`}>
+                           {log.decision}
+                        </span>
                       </div>
                     </td>
-                    <td className="px-8 py-6 text-center">
-                      <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border ${
-                        log.decision === 'ALLOW' 
-                          ? 'bg-defense-green/10 border-defense-green/20 text-defense-green' 
-                          : 'bg-defense-red/10 border-defense-red/20 text-defense-red'
-                      }`}>
-                        {log.decision === 'ALLOW' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                        <span className="text-[10px] font-black uppercase tracking-widest">{log.decision}</span>
-                      </div>
-                    </td>
-                    <td className="px-8 py-6">
-                      <p className={`text-[10px] font-medium leading-relaxed max-w-[200px] ${
-                        log.requested_permission === 'LOGIN_DEVICE_LOCKDOWN' ? 'text-defense-red font-bold' : 'text-slate-400'
-                      }`}>
+                    <td className="px-6 py-2">
+                      <p className="text-[10px] text-secondary truncate max-w-[240px]" title={log.reason}>
                         {log.reason}
                       </p>
                     </td>
-                    <td className="px-8 py-6">
-                      <div className="flex items-center gap-2 text-slate-500 text-xs font-medium whitespace-nowrap">
-                        <Clock size={12} />
-                        {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
+                    <td className="px-6 py-2 text-muted">
+                      {new Date(log.timestamp).toLocaleTimeString('en-GB', { hour12: false })}
                     </td>
-                    <td className="px-8 py-6 max-w-xs">
-                      <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
+                    <td className="px-6 py-2">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
                         {log.escalation_path && log.escalation_path !== '[]' ? (
-                          JSON.parse(log.escalation_path).map((p, i) => (
+                          JSON.parse(log.escalation_path).map((p, i, arr) => (
                             <React.Fragment key={i}>
-                              <span className="text-[10px] font-bold text-slate-500 bg-white/5 px-2 py-0.5 rounded">{p}</span>
-                              {i < JSON.parse(log.escalation_path).length - 1 && <span className="text-slate-800">→</span>}
+                              <span className="text-[9px] text-primary bg-bg-elevated px-1.5 py-0.5 border border-border">{p}</span>
+                              {i < arr.length - 1 && <ArrowRight size={10} className="text-muted" />}
                             </React.Fragment>
                           ))
                         ) : (
-                          <span className="text-[10px] font-bold text-slate-700 italic">No Chain</span>
+                          <span className="text-[10px] text-muted italic">—</span>
                         )}
                       </div>
                     </td>
-                  </motion.tr>
+                  </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
         
-        <div className="px-8 py-6 border-t border-white/5 bg-white/2 flex items-center justify-between">
-          <p className="text-xs text-slate-600 font-medium">Showing {logs.length} operations detected</p>
+        <div className="px-6 h-10 border-t border-border bg-bg-surface flex items-center justify-between shrink-0">
+          <p className="text-[10px] text-muted uppercase">Showing {logs.length} operations detected</p>
           <div className="flex items-center gap-4">
-            <button className="btn-ghost p-1 disabled:opacity-20" disabled><ChevronLeft size={20} /></button>
-            <span className="text-xs font-black text-white uppercase tracking-widest">Page 01</span>
-            <button className="btn-ghost p-1 disabled:opacity-20" disabled><ChevronRight size={20} /></button>
+            <button className="text-muted hover:text-primary disabled:opacity-20" disabled><ChevronLeft size={16} /></button>
+            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">PAGE 01</span>
+            <button className="text-muted hover:text-primary disabled:opacity-20" disabled><ChevronRight size={16} /></button>
           </div>
         </div>
       </div>
