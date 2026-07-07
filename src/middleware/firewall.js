@@ -29,14 +29,14 @@ const firewall = (permissionName) => {
       // resourceTenantId can be provided in body or query for cross-tenant checks
       const resourceTenantId = req.body.resourceTenantId || req.query.resourceTenantId || null;
       
-      const result = engine.checkAccess(req.user.id, permissionName, resourceTenantId);
+      const result = await engine.checkAccess(req.user.id, permissionName, resourceTenantId);
 
       // Log decision to audit trail
       const db = getConnection();
       const auditLogId = uuidv4();
       req.auditLogId = auditLogId;
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (
           id, user_id, tenant_id, requested_permission, decision, 
           reason, escalation_path, ip_address, endpoint, method

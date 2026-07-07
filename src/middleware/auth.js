@@ -4,7 +4,7 @@ const { getConnection } = require('../database/connection');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'defense-firewall-secret';
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -20,7 +20,7 @@ function authenticate(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     const db = getConnection();
     
-    const user = db.prepare(`
+    const user = await db.prepare(`
       SELECT u.id, u.username, u.email, u.tenant_id, u.is_active, t.name as tenant_name
       FROM users u
       JOIN tenants t ON u.tenant_id = t.id
@@ -60,12 +60,12 @@ function authenticate(req, res, next) {
         
         // 1. KILL THE SESSION INSTANTLY
         if (decoded.sessionId) {
-          db.prepare('UPDATE user_sessions SET is_revoked = 1 WHERE id = ?').run(decoded.sessionId);
+          await db.prepare('UPDATE user_sessions SET is_revoked = TRUE WHERE id = ?').run(decoded.sessionId);
         }
 
         // 2. RECORD CRITICAL AUDIT LOG
         const { v4: uuidv4 } = require('uuid');
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
@@ -88,7 +88,7 @@ function authenticate(req, res, next) {
 
     // Layer 3: Trusted Device Check
     if (decoded.deviceId) {
-      const device = db.prepare('SELECT is_active FROM trusted_devices WHERE id = ? AND is_active = 1').get(decoded.deviceId);
+      const device = await db.prepare('SELECT is_active FROM trusted_devices WHERE id = ? AND is_active = TRUE').get(decoded.deviceId);
       if (!device) {
         return res.status(403).json({ error: 'DEVICE_INVALID', message: '🛡️ Device revoked.' });
       }
@@ -100,9 +100,9 @@ function authenticate(req, res, next) {
   }
 }
 
-function isAdmin(req, res, next) {
+async function isAdmin(req, res, next) {
   const db = getConnection();
-  const role = db.prepare(`
+  const role = await db.prepare(`
     SELECT r.name FROM roles r
     JOIN user_roles ur ON r.id = ur.role_id
     WHERE ur.user_id = ? AND r.name IN ('Brigadier', 'Strategic_Admin')

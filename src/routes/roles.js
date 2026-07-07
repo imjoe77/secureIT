@@ -25,7 +25,7 @@ router.use(authenticate);
  * POST /api/roles
  * Create a new role in the current tenant
  */
-router.post('/', firewall('manage:roles'), (req, res) => {
+router.post('/', firewall('manage:roles'), async (req, res) => {
   const { name, description } = req.body;
 
   if (!name) {
@@ -38,7 +38,7 @@ router.post('/', firewall('manage:roles'), (req, res) => {
   const db = getConnection();
 
   // Check if role name already exists in this tenant
-  const existing = db.prepare('SELECT id FROM roles WHERE name = ? AND tenant_id = ?').get(name, req.user.tenantId);
+  const existing = await db.prepare('SELECT id FROM roles WHERE name = ? AND tenant_id = ?').get(name, req.user.tenantId);
   if (existing) {
     return res.status(409).json({
       error: 'ROLE_EXISTS',
@@ -47,7 +47,7 @@ router.post('/', firewall('manage:roles'), (req, res) => {
   }
 
   const id = uuidv4();
-  db.prepare('INSERT INTO roles (id, name, description, tenant_id) VALUES (?, ?, ?, ?)').run(
+  await db.prepare('INSERT INTO roles (id, name, description, tenant_id) VALUES (?, ?, ?, ?)').run(
     id, name, description || null, req.user.tenantId
   );
 
@@ -62,10 +62,10 @@ router.post('/', firewall('manage:roles'), (req, res) => {
  * GET /api/roles
  * List all roles in the current tenant
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const db = getConnection();
 
-  const roles = db.prepare(`
+  const roles = await db.prepare(`
     SELECT r.id, r.name, r.description, r.is_system_role, r.created_at,
            COUNT(DISTINCT ur.user_id) as user_count,
            COUNT(DISTINCT rp.permission_id) as permission_count
@@ -88,7 +88,7 @@ router.get('/', (req, res) => {
  * POST /api/roles/assign
  * Assign a role to a user (with tenant boundary check)
  */
-router.post('/assign', firewall('manage:roles'), (req, res) => {
+router.post('/assign', firewall('manage:roles'), async (req, res) => {
   const { userId, roleId } = req.body;
 
   if (!userId || !roleId) {
@@ -101,7 +101,7 @@ router.post('/assign', firewall('manage:roles'), (req, res) => {
   const db = getConnection();
 
   // Verify user exists and belongs to same tenant
-  const targetUser = db.prepare('SELECT id, username, tenant_id FROM users WHERE id = ?').get(userId);
+  const targetUser = await db.prepare('SELECT id, username, tenant_id FROM users WHERE id = ?').get(userId);
   if (!targetUser) {
     return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'Target user does not exist.' });
   }
@@ -115,7 +115,7 @@ router.post('/assign', firewall('manage:roles'), (req, res) => {
   }
 
   // Verify role exists and belongs to same tenant
-  const role = db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(roleId);
+  const role = await db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(roleId);
   if (!role) {
     return res.status(404).json({ error: 'ROLE_NOT_FOUND', message: 'Role does not exist.' });
   }
@@ -129,7 +129,7 @@ router.post('/assign', firewall('manage:roles'), (req, res) => {
   }
 
   // Check if already assigned
-  const existing = db.prepare('SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = ?').get(userId, roleId);
+  const existing = await db.prepare('SELECT 1 FROM user_roles WHERE user_id = ? AND role_id = ?').get(userId, roleId);
   if (existing) {
     return res.status(409).json({
       error: 'ALREADY_ASSIGNED',
@@ -137,7 +137,7 @@ router.post('/assign', firewall('manage:roles'), (req, res) => {
     });
   }
 
-  db.prepare('INSERT INTO user_roles (user_id, role_id, assigned_by) VALUES (?, ?, ?)').run(
+  await db.prepare('INSERT INTO user_roles (user_id, role_id, assigned_by) VALUES (?, ?, ?)').run(
     userId, roleId, req.user.id
   );
 
@@ -152,7 +152,7 @@ router.post('/assign', firewall('manage:roles'), (req, res) => {
  * DELETE /api/roles/unassign
  * Remove a role from a user
  */
-router.delete('/unassign', firewall('manage:roles'), (req, res) => {
+router.delete('/unassign', firewall('manage:roles'), async (req, res) => {
   const { userId, roleId } = req.body;
 
   if (!userId || !roleId) {
@@ -164,7 +164,7 @@ router.delete('/unassign', firewall('manage:roles'), (req, res) => {
 
   const db = getConnection();
 
-  const result = db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?').run(userId, roleId);
+  const result = await db.prepare('DELETE FROM user_roles WHERE user_id = ? AND role_id = ?').run(userId, roleId);
 
   if (result.changes === 0) {
     return res.status(404).json({
@@ -180,7 +180,7 @@ router.delete('/unassign', firewall('manage:roles'), (req, res) => {
  * POST /api/roles/hierarchy
  * Set role inheritance (parent inherits child's permissions)
  */
-router.post('/hierarchy', firewall('manage:roles'), (req, res) => {
+router.post('/hierarchy', firewall('manage:roles'), async (req, res) => {
   const { parentRoleId, childRoleId } = req.body;
 
   if (!parentRoleId || !childRoleId) {
@@ -200,8 +200,8 @@ router.post('/hierarchy', firewall('manage:roles'), (req, res) => {
   const db = getConnection();
 
   // Verify both roles exist and belong to same tenant
-  const parentRole = db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(parentRoleId);
-  const childRole = db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(childRoleId);
+  const parentRole = await db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(parentRoleId);
+  const childRole = await db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(childRoleId);
 
   if (!parentRole || !childRole) {
     return res.status(404).json({ error: 'ROLE_NOT_FOUND', message: 'One or both roles do not exist.' });
@@ -215,7 +215,7 @@ router.post('/hierarchy', firewall('manage:roles'), (req, res) => {
   }
 
   // Check for existing link
-  const existing = db.prepare('SELECT 1 FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?')
+  const existing = await db.prepare('SELECT 1 FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?')
     .get(parentRoleId, childRoleId);
   if (existing) {
     return res.status(409).json({
@@ -229,14 +229,14 @@ router.post('/hierarchy', firewall('manage:roles'), (req, res) => {
   const engine = new PermissionGraph();
   
   // Temporarily add the edge and check for cycles
-  db.prepare('INSERT INTO role_hierarchy (parent_role_id, child_role_id) VALUES (?, ?)').run(parentRoleId, childRoleId);
+  await db.prepare('INSERT INTO role_hierarchy (parent_role_id, child_role_id) VALUES (?, ?)').run(parentRoleId, childRoleId);
   
-  const roleGraph = engine.buildRoleGraph(req.user.tenantId);
-  const cycleCheck = engine.dfsDetectCycles(parentRoleId, roleGraph);
+  const roleGraph = await engine.buildRoleGraph(req.user.tenantId);
+  const cycleCheck = await engine.dfsDetectCycles(parentRoleId, roleGraph);
   
   if (cycleCheck.hasCycle) {
     // Rollback
-    db.prepare('DELETE FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?').run(parentRoleId, childRoleId);
+    await db.prepare('DELETE FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?').run(parentRoleId, childRoleId);
     return res.status(400).json({
       error: 'CYCLE_DETECTED',
       message: `🛡️ Adding this inheritance would create a circular dependency: ${cycleCheck.cyclePath.join(' → ')}`,
@@ -258,7 +258,7 @@ router.post('/hierarchy', firewall('manage:roles'), (req, res) => {
  * DELETE /api/roles/hierarchy
  * Remove role inheritance link
  */
-router.delete('/hierarchy', firewall('manage:roles'), (req, res) => {
+router.delete('/hierarchy', firewall('manage:roles'), async (req, res) => {
   const { parentRoleId, childRoleId } = req.body;
 
   if (!parentRoleId || !childRoleId) {
@@ -269,7 +269,7 @@ router.delete('/hierarchy', firewall('manage:roles'), (req, res) => {
   }
 
   const db = getConnection();
-  const result = db.prepare('DELETE FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?')
+  const result = await db.prepare('DELETE FROM role_hierarchy WHERE parent_role_id = ? AND child_role_id = ?')
     .run(parentRoleId, childRoleId);
 
   if (result.changes === 0) {
@@ -283,10 +283,10 @@ router.delete('/hierarchy', firewall('manage:roles'), (req, res) => {
  * GET /api/roles/graph
  * Get the role hierarchy graph for the current tenant (for visualization)
  */
-router.get('/graph', (req, res) => {
+router.get('/graph', async (req, res) => {
   const PermissionGraph = require('../engine/permissionGraph');
   const engine = new PermissionGraph();
-  const graph = engine.getTenantRoleGraph(req.user.tenantId);
+  const graph = await engine.getTenantRoleGraph(req.user.tenantId);
 
   res.json({
     tenant: { id: req.user.tenantId, name: req.user.tenantName },

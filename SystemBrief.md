@@ -28,11 +28,11 @@ SecureIT is a high-assurance, multi-tenant SaaS platform designed to prevent dat
 - **Real-Time Polling**: The frontend dashboard monitors the audit log for `SESSION_SPLIT` or `UNAUTHORIZED_ACCESS` events, triggering immediate UI alerts.
 
 ## 7. Technical Stack
-- **Backend**: Node.js, Express, SQLite (better-sqlite3).
+- **Backend**: Node.js, Express, PostgreSQL (`pg`).
 - **Frontend**: React (Vite), Tailwind CSS, Framer Motion (premium aesthetics).
 - **Security**: JWT (Hardware-Bound), FingerprintJS/Custom Canvas, Bcrypt.
 
 ## 8. Maintenance & Operations
 - **Seed Script**: `src/database/seed.js` handles full environment resets with realistic multi-tenant data.
-- **Connection**: Managed via `src/database/connection.js` (Singleton pattern).
+- **Connection**: Managed via `src/database/connection.js` (PostgreSQL pool singleton).
 - **Middlewares**: `src/middleware/auth.js` (Session Guard) and `src/middleware/firewall.js` (Permission Guard).

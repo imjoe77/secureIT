@@ -39,11 +39,11 @@ async function startServer() {
   app.use("/api/engine", require("./routes/engine"));
 
   // Health
-  app.get("/api/health", (req, res) => {
+  app.get("/api/health", async (req, res) => {
     const db = getConnection();
-    const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get();
-    const tenantCount = db.prepare("SELECT COUNT(*) as count FROM tenants").get();
-    const auditCount = db.prepare("SELECT COUNT(*) as count FROM audit_log").get();
+    const userCount = await db.prepare("SELECT COUNT(*) as count FROM users").get();
+    const tenantCount = await db.prepare("SELECT COUNT(*) as count FROM tenants").get();
+    const auditCount = await db.prepare("SELECT COUNT(*) as count FROM audit_log").get();
 
     res.json({
       status: "operational",
@@ -59,17 +59,17 @@ async function startServer() {
     });
   });
 
-  app.get("/api/my-ip", (req, res) => {
+  app.get("/api/my-ip", async (req, res) => {
     res.json({ ip: req.ip || req.connection.remoteAddress });
   });
 
   // API 404
-  app.all("/api/*", (req, res) => {
+  app.all("/api/*", async (req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: "API endpoint not found." });
   });
 
   // SPA catch-all
-  app.get("*", (req, res) => {
+  app.get("*", async (req, res) => {
     res.sendFile(path.join(frontendPath, "index.html"));
   });
 

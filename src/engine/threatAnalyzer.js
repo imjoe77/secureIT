@@ -6,7 +6,7 @@
  * a sliding 60-second window, the system auto-flags them as a THREAT_ACTOR.
  * 
  * This runs as pure backend logic — no additional infrastructure needed.
- * The analyzer queries SQLite directly and surfaces alerts via the /api/audit/threats endpoint.
+ * The analyzer queries PostgreSQL directly and surfaces alerts via the /api/audit/threats endpoint.
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -26,7 +26,7 @@ const FLAGGED_ACTORS = new Map(); // In-memory threat actor registry: userId →
  * @param {string} [tenantId] - Optional tenant filter
  * @returns {{ threats: Array, scannedAt: string }}
  */
-function analyzeThreats(tenantId = null) {
+async function analyzeThreats(tenantId = null) {
   const db = getConnection();
   const windowStart = new Date(Date.now() - WINDOW_SECONDS * 1000).toISOString();
 
@@ -36,8 +36,8 @@ function analyzeThreats(tenantId = null) {
       al.user_id, 
       u.username,
       COUNT(*) as deny_count,
-      GROUP_CONCAT(DISTINCT al.requested_permission) as targeted_permissions,
-      GROUP_CONCAT(DISTINCT al.ip_address) as source_ips,
+      string_agg(DISTINCT al.requested_permission, ',') as targeted_permissions,
+      string_agg(DISTINCT al.ip_address, ',') as source_ips,
       MIN(al.timestamp) as first_event,
       MAX(al.timestamp) as last_event
     FROM audit_log al
@@ -52,10 +52,10 @@ function analyzeThreats(tenantId = null) {
     params.push(tenantId);
   }
 
-  query += ' GROUP BY al.user_id HAVING deny_count >= ?';
+  query += ' GROUP BY al.user_id, u.username HAVING COUNT(*) >= ?';
   params.push(DENY_THRESHOLD);
 
-  const suspiciousUsers = db.prepare(query).all(...params);
+  const suspiciousUsers = await db.prepare(query).all(...params);
 
   const threats = [];
 
@@ -93,7 +93,7 @@ function analyzeThreats(tenantId = null) {
 
       // Record the threat detection to the audit log
       try {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, timestamp)
           VALUES (?, ?, ?, ?, ?, ?, ?)
         `).run(

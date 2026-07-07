@@ -8,6 +8,9 @@ const EnvSchema = z.object({
   JWT_EXPIRES_IN: z.string().default("1h"),
   BCRYPT_ROUNDS: z.coerce.number().int().min(8).max(15).default(12),
 
+  DATABASE_URL: z.string().url(),
+  PGSSLMODE: z.enum(["disable", "require", "no-verify"]).default("disable"),
+
   CORS_ORIGIN: z.string().optional(),
 });
 

@@ -25,10 +25,10 @@ class PermissionGraph {
   /**
    * Persist a security decision to the audit log.
    */
-  recordAuditLog(userId, tenantId, permission, decision, reason, path = [], code = null) {
+  async recordAuditLog(userId, tenantId, permission, decision, reason, path = [], code = null) {
     try {
       const id = uuidv4();
-      this.db.prepare(`
+      await this.db.prepare(`
         INSERT INTO audit_log (
           id, user_id, tenant_id, requested_permission, 
           decision, reason, escalation_path, timestamp
@@ -53,14 +53,14 @@ class PermissionGraph {
    * Each role points to the roles it inherits (children in the hierarchy).
    * 
    * @param {string} tenantId - The tenant to build the graph for
-   * @returns {Map<string, string[]>} adjacency list: parentRoleId → [childRoleIds]
+   * @returns {Map<string, string[]>} adjacency list: parentRoleId â†’ [childRoleIds]
    */
-  buildRoleGraph(tenantId) {
+  async buildRoleGraph(tenantId) {
     const graph = new Map();
     console.log(`[PermissionGraph] Building graph for tenant: ${tenantId}`);
 
     // Get all roles for this tenant
-    const roles = this.db.prepare(
+    const roles = await this.db.prepare(
       'SELECT id, name FROM roles WHERE tenant_id = ?'
     ).all(tenantId);
 
@@ -68,7 +68,7 @@ class PermissionGraph {
     roles.forEach(r => graph.set(r.id, []));
 
     // Get all hierarchy edges where the parent role belongs to this tenant
-    const edges = this.db.prepare(`
+    const edges = await this.db.prepare(`
       SELECT rh.parent_role_id, rh.child_role_id
       FROM role_hierarchy rh
       JOIN roles r ON rh.parent_role_id = r.id
@@ -92,8 +92,8 @@ class PermissionGraph {
    * @param {string} userId
    * @returns {Array<{id, name, tenant_id}>}
    */
-  getUserDirectRoles(userId) {
-    return this.db.prepare(`
+  async getUserDirectRoles(userId) {
+    return await this.db.prepare(`
       SELECT r.id, r.name, r.tenant_id
       FROM roles r
       JOIN user_roles ur ON r.id = ur.role_id
@@ -107,8 +107,8 @@ class PermissionGraph {
    * @param {string} roleId
    * @returns {Array<{id, name, resource, action, risk_level}>}
    */
-  getRoleDirectPermissions(roleId) {
-    return this.db.prepare(`
+  async getRoleDirectPermissions(roleId) {
+    return await this.db.prepare(`
       SELECT p.id, p.name, p.resource, p.action, p.risk_level
       FROM permissions p
       JOIN role_permissions rp ON p.id = rp.permission_id
@@ -119,8 +119,8 @@ class PermissionGraph {
   /**
    * Get role name by ID.
    */
-  getRoleName(roleId) {
-    const role = this.db.prepare('SELECT name FROM roles WHERE id = ?').get(roleId);
+  async getRoleName(roleId) {
+    const role = await this.db.prepare('SELECT name FROM roles WHERE id = ?').get(roleId);
     return role ? role.name : 'Unknown';
   }
 
@@ -138,12 +138,12 @@ class PermissionGraph {
    *     }
    *   }
    */
-  bfsTraversePermissions(startRoleId, roleGraph) {
+  async bfsTraversePermissions(startRoleId, roleGraph) {
     const result = new Map();
     const visited = new Set();
     
     // Queue entries: { roleId, path: string[], depth: number }
-    const queue = [{ roleId: startRoleId, path: [this.getRoleName(startRoleId)], depth: 0 }];
+    const queue = [{ roleId: startRoleId, path: [await this.getRoleName(startRoleId)], depth: 0 }];
 
     while (queue.length > 0) {
       const { roleId, path, depth } = queue.shift();
@@ -152,7 +152,7 @@ class PermissionGraph {
       visited.add(roleId);
 
       // Get direct permissions for this role
-      const perms = this.getRoleDirectPermissions(roleId);
+      const perms = await this.getRoleDirectPermissions(roleId);
       perms.forEach(perm => {
         // Only record the first (shortest) path to each permission
         if (!result.has(perm.name)) {
@@ -168,15 +168,15 @@ class PermissionGraph {
 
       // Traverse children (inherited roles)
       const children = roleGraph.get(roleId) || [];
-      children.forEach(childId => {
+      for (const childId of children) {
         if (!visited.has(childId)) {
           queue.push({
             roleId: childId,
-            path: [...path, this.getRoleName(childId)],
+            path: [...path, await this.getRoleName(childId)],
             depth: depth + 1,
           });
         }
-      });
+      }
     }
 
     return result;
@@ -191,24 +191,24 @@ class PermissionGraph {
    * @param {Map} roleGraph
    * @returns {{ hasCycle: boolean, cyclePath: string[] | null }}
    */
-  dfsDetectCycles(startRoleId, roleGraph) {
+  async dfsDetectCycles(startRoleId, roleGraph) {
     const visited = new Set();
     const recursionStack = new Set();
     const path = [];
 
-    const dfs = (roleId) => {
+    const dfs = async (roleId) => {
       visited.add(roleId);
       recursionStack.add(roleId);
-      path.push(this.getRoleName(roleId));
+      path.push(await this.getRoleName(roleId));
 
       const children = roleGraph.get(roleId) || [];
       for (const childId of children) {
         if (!visited.has(childId)) {
-          const result = dfs(childId);
+          const result = await dfs(childId);
           if (result.hasCycle) return result;
         } else if (recursionStack.has(childId)) {
           // Cycle detected
-          const cycleStart = this.getRoleName(childId);
+          const cycleStart = await this.getRoleName(childId);
           const cyclePath = [...path, cycleStart];
           return { hasCycle: true, cyclePath };
         }
@@ -219,7 +219,7 @@ class PermissionGraph {
       return { hasCycle: false, cyclePath: null };
     };
 
-    return dfs(startRoleId);
+    return await dfs(startRoleId);
   }
 
   /**
@@ -244,11 +244,11 @@ class PermissionGraph {
    * @param {object} context - Additional request context (ip, deviceId, etc.)
    * @returns {AccessDecision}
    */
-  checkAccess(userId, requestedPermission, resourceTenantId = null, context = {}) {
+  async checkAccess(userId, requestedPermission, resourceTenantId = null, context = {}) {
     const startTime = Date.now();
 
-    // ─── Step 1: Validate user ───────────────────────────────
-    const user = this.db.prepare(
+    // â”€â”€â”€ Step 1: Validate user â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const user = await this.db.prepare(
       'SELECT id, username, tenant_id, is_active FROM users WHERE id = ?'
     ).get(userId);
 
@@ -267,16 +267,16 @@ class PermissionGraph {
       });
     }
 
-    // ─── Step 2: Cross-tenant resource check ─────────────────
+    // â”€â”€â”€ Step 2: Cross-tenant resource check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (resourceTenantId && resourceTenantId !== user.tenant_id) {
-      const userTenant = this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(user.tenant_id);
-      const resTenant = this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(resourceTenantId);
+      const userTenant = await this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(user.tenant_id);
+      const resTenant = await this.db.prepare('SELECT name FROM tenants WHERE id = ?').get(resourceTenantId);
 
       const reason = `Cross-tenant access blocked: User '${user.username}' belongs to '${userTenant?.name || 'Unknown'}' ` +
         `but attempted to access resource in '${resTenant?.name || 'Unknown'}'. ` +
         `Tenant boundary violation detected.`;
       
-      this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', reason, [], 'CROSS_TENANT_VIOLATION');
+      await this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', reason, [], 'CROSS_TENANT_VIOLATION');
 
       return this._deny('CROSS_TENANT_VIOLATION', reason,
         {
@@ -289,8 +289,8 @@ class PermissionGraph {
       );
     }
 
-    // ─── Step 3: Get user's direct roles ─────────────────────
-    const directRoles = this.getUserDirectRoles(userId);
+    // â”€â”€â”€ Step 3: Get user's direct roles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const directRoles = await this.getUserDirectRoles(userId);
 
     if (directRoles.length === 0) {
       return this._deny('NO_ROLES',
@@ -299,7 +299,7 @@ class PermissionGraph {
       );
     }
 
-    // ─── Step 4: Validate role-tenant integrity ──────────────
+    // â”€â”€â”€ Step 4: Validate role-tenant integrity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const crossTenantRoles = directRoles.filter(r => r.tenant_id !== user.tenant_id);
     if (crossTenantRoles.length > 0) {
       return this._deny('CROSS_TENANT_ROLE',
@@ -315,15 +315,15 @@ class PermissionGraph {
       );
     }
 
-    // ─── Step 5: Build role graph and check for cycles ───────
-    const roleGraph = this.buildRoleGraph(user.tenant_id);
+    // â”€â”€â”€ Step 5: Build role graph and check for cycles â”€â”€â”€â”€â”€â”€â”€
+    const roleGraph = await this.buildRoleGraph(user.tenant_id);
 
     for (const role of directRoles) {
-      const cycleResult = this.dfsDetectCycles(role.id, roleGraph);
+      const cycleResult = await this.dfsDetectCycles(role.id, roleGraph);
       if (cycleResult.hasCycle) {
         return this._deny('CYCLE_DETECTED',
           `Security violation: Circular role inheritance detected in path: ` +
-          `${cycleResult.cyclePath.join(' → ')}. ` +
+          `${cycleResult.cyclePath.join(' â†’ ')}. ` +
           `This may indicate a misconfiguration or escalation attempt.`,
           {
             userId: user.id,
@@ -335,11 +335,11 @@ class PermissionGraph {
       }
     }
 
-    // ─── Step 6: BFS to collect all reachable permissions ────
+    // â”€â”€â”€ Step 6: BFS to collect all reachable permissions â”€â”€â”€â”€
     const allPermissions = new Map();
     
     for (const role of directRoles) {
-      const rolePerms = this.bfsTraversePermissions(role.id, roleGraph);
+      const rolePerms = await this.bfsTraversePermissions(role.id, roleGraph);
       rolePerms.forEach((value, key) => {
         if (!allPermissions.has(key)) {
           allPermissions.set(key, value);
@@ -347,11 +347,11 @@ class PermissionGraph {
       });
     }
 
-    // ─── Step 7: Check if requested permission is reachable ──
+    // â”€â”€â”€ Step 7: Check if requested permission is reachable â”€â”€
     if (!allPermissions.has(requestedPermission)) {
       // Collect all available permissions for helpful message
       const availablePerms = Array.from(allPermissions.keys()).sort();
-      this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', 'Permission not found in user hierarchy.', [], 'PERMISSION_NOT_FOUND');
+      await this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'DENY', 'Permission not found in user hierarchy.', [], 'PERMISSION_NOT_FOUND');
       return this._deny('PERMISSION_NOT_FOUND',
         `Access denied: User '${user.username}' does not have permission '${requestedPermission}'. ` +
         `This permission is not reachable through any assigned role or role inheritance chain.`,
@@ -367,16 +367,16 @@ class PermissionGraph {
 
     const permAccess = allPermissions.get(requestedPermission);
 
-    // ─── Step 8: Apply firewall rules ────────────────────────
-    const firewallResult = this._applyFirewallRules(user, permAccess, allPermissions, context);
+    // â”€â”€â”€ Step 8: Apply firewall rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const firewallResult = await this._applyFirewallRules(user, permAccess, allPermissions, context);
     if (firewallResult) {
       return firewallResult;
     }
 
-    // ─── Step 9: Allow with full details ─────────────────────
+    // â”€â”€â”€ Step 9: Allow with full details â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const elapsed = Date.now() - startTime;
     
-    this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'ALLOW', permAccess.isDirect ? 'Direct access' : 'Inherited access', permAccess.path);
+    await this.recordAuditLog(user.id, user.tenant_id, requestedPermission, 'ALLOW', permAccess.isDirect ? 'Direct access' : 'Inherited access', permAccess.path);
 
     return {
       decision: 'ALLOW',
@@ -391,7 +391,7 @@ class PermissionGraph {
       sourceRole: permAccess.sourceRole,
       reason: permAccess.isDirect
         ? `Permission '${requestedPermission}' is directly assigned via role '${permAccess.path[0]}'`
-        : `Permission '${requestedPermission}' is inherited through chain: ${permAccess.path.join(' → ')}`,
+        : `Permission '${requestedPermission}' is inherited through chain: ${permAccess.path.join(' â†’ ')}`,
       evaluationTimeMs: elapsed,
       allReachablePermissions: Array.from(allPermissions.entries()).map(([name, info]) => ({
         name,
@@ -407,9 +407,9 @@ class PermissionGraph {
    * Apply configurable firewall rules to determine if an otherwise-allowed
    * permission should be blocked.
    */
-  _applyFirewallRules(user, permAccess, allPermissions, context = {}) {
-    const rules = this.db.prepare(
-      `SELECT * FROM firewall_rules WHERE is_active = 1 AND (tenant_id IS NULL OR tenant_id = ?)`
+  async _applyFirewallRules(user, permAccess, allPermissions, context = {}) {
+    const rules = await this.db.prepare(
+      `SELECT * FROM firewall_rules WHERE is_active = TRUE AND (tenant_id IS NULL OR tenant_id = ?)`
     ).all(user.tenant_id);
 
     for (const rule of rules) {
@@ -423,11 +423,11 @@ class PermissionGraph {
               context.ip && 
               !config.allowed_ips.includes(context.ip)) {
             
-            const reason = `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+            const reason = `ðŸ›¡ï¸ Firewall Rule "${rule.name}" triggered: ` +
               `High-Command access from Unverified Device detected. ` +
               `Device IP [${context.ip}] is not in the trusted registry for role '${permAccess.sourceRole}'.`;
             
-            this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, [], 'DEVICE_LOCKDOWN_VIOLATION');
+            await this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, [], 'DEVICE_LOCKDOWN_VIOLATION');
 
             return this._deny('DEVICE_LOCKDOWN_VIOLATION', reason, {
               userId: user.id,
@@ -445,14 +445,14 @@ class PermissionGraph {
               if (!permAccess.isDirect &&
               config.risk_levels.includes(permAccess.permission.risk_level) &&
               permAccess.depth > config.max_depth) {
-            const reason = `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+            const reason = `ðŸ›¡ï¸ Firewall Rule "${rule.name}" triggered: ` +
               `Permission '${permAccess.permission.name}' (risk: ${permAccess.permission.risk_level}) ` +
               `was reached via indirect inheritance at depth ${permAccess.depth} ` +
               `(max allowed: ${config.max_depth}). ` +
-              `Escalation path: ${permAccess.path.join(' → ')}. ` +
+              `Escalation path: ${permAccess.path.join(' â†’ ')}. ` +
               `This may indicate an unintended privilege escalation.`;
             
-            this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, permAccess.path, 'INDIRECT_ESCALATION_BLOCKED');
+            await this.recordAuditLog(user.id, user.tenant_id, permAccess.permission.name, 'DENY', reason, permAccess.path, 'INDIRECT_ESCALATION_BLOCKED');
 
             return this._deny('INDIRECT_ESCALATION_BLOCKED', reason, {
                 userId: user.id,
@@ -472,7 +472,7 @@ class PermissionGraph {
         case 'max_depth': {
           if (permAccess.depth > config.max_depth) {
             return this._deny('MAX_DEPTH_EXCEEDED',
-              `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+              `ðŸ›¡ï¸ Firewall Rule "${rule.name}" triggered: ` +
               `Permission reached at inheritance depth ${permAccess.depth}, ` +
               `exceeding maximum allowed depth of ${config.max_depth}.`,
               {
@@ -492,7 +492,7 @@ class PermissionGraph {
           if (config.blocked_permissions &&
               config.blocked_permissions.includes(permAccess.permission.name)) {
             return this._deny('PERMISSION_BLOCKED',
-              `🛡️ Firewall Rule "${rule.name}" triggered: ` +
+              `ðŸ›¡ï¸ Firewall Rule "${rule.name}" triggered: ` +
               `Permission '${permAccess.permission.name}' is explicitly blocked by firewall policy.`,
               {
                 userId: user.id,
@@ -527,29 +527,29 @@ class PermissionGraph {
    * Simulate granting a role to a user and calculate the risk.
    * This is a read-only computation that predicts security impact.
    */
-  simulateUserGrant(userId, hypotheticalRoleId) {
-    const user = this.db.prepare('SELECT id, username, tenant_id FROM users WHERE id = ?').get(userId);
-    const role = this.db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(hypotheticalRoleId);
+  async simulateUserGrant(userId, hypotheticalRoleId) {
+    const user = await this.db.prepare('SELECT id, username, tenant_id FROM users WHERE id = ?').get(userId);
+    const role = await this.db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(hypotheticalRoleId);
 
     if (!user || !role) throw new Error('User or Role not found');
     if (user.tenant_id !== role.tenant_id) throw new Error('Cross-tenant simulation forbidden');
 
     // 1. Get current state
-    const currentMap = this.getUserPermissionMap(userId);
+    const currentMap = await this.getUserPermissionMap(userId);
     const currentPerms = new Set([
       ...currentMap.permissions.direct.map(p => p.name),
       ...currentMap.permissions.inherited.map(p => p.name)
     ]);
 
     // 2. Build projected state (add hypothetical role to user's direct roles)
-    const projectedRoles = this.getUserDirectRoles(userId);
+    const projectedRoles = await this.getUserDirectRoles(userId);
     projectedRoles.push({ id: role.id, name: role.name, tenant_id: role.tenant_id });
 
-    const roleGraph = this.buildRoleGraph(user.tenant_id);
+    const roleGraph = await this.buildRoleGraph(user.tenant_id);
     const allPermissions = new Map();
 
     for (const r of projectedRoles) {
-      const rolePerms = this.bfsTraversePermissions(r.id, roleGraph);
+      const rolePerms = await this.bfsTraversePermissions(r.id, roleGraph);
       rolePerms.forEach((value, key) => {
         // Keep the path with the lowest depth (strongest access)
         if (!allPermissions.has(key) || value.depth < allPermissions.get(key).depth) {
@@ -604,19 +604,19 @@ class PermissionGraph {
   /**
    * Get complete permission map for a user (for dashboard/debugging).
    */
-  getUserPermissionMap(userId) {
-    const user = this.db.prepare(
+  async getUserPermissionMap(userId) {
+    const user = await this.db.prepare(
       'SELECT id, username, tenant_id FROM users WHERE id = ?'
     ).get(userId);
 
     if (!user) return null;
 
-    const directRoles = this.getUserDirectRoles(userId);
-    const roleGraph = this.buildRoleGraph(user.tenant_id);
+    const directRoles = await this.getUserDirectRoles(userId);
+    const roleGraph = await this.buildRoleGraph(user.tenant_id);
     const allPermissions = new Map();
 
     for (const role of directRoles) {
-      const rolePerms = this.bfsTraversePermissions(role.id, roleGraph);
+      const rolePerms = await this.bfsTraversePermissions(role.id, roleGraph);
       rolePerms.forEach((value, key) => {
         if (!allPermissions.has(key)) {
           allPermissions.set(key, value);
@@ -657,12 +657,12 @@ class PermissionGraph {
   /**
    * Get the full role hierarchy graph for a tenant (for visualization).
    */
-  getTenantRoleGraph(tenantId) {
-    const roles = this.db.prepare(
+  async getTenantRoleGraph(tenantId) {
+    const roles = await this.db.prepare(
       'SELECT id, name, description, is_system_role FROM roles WHERE tenant_id = ?'
     ).all(tenantId);
 
-    const rawEdges = this.db.prepare(`
+    const rawEdges = await this.db.prepare(`
       SELECT rh.parent_role_id, rh.child_role_id, 
              r1.name as parent_name, r2.name as child_name
       FROM role_hierarchy rh
@@ -676,20 +676,20 @@ class PermissionGraph {
     const edges = rawEdges.filter(e => !isAdminRole(e.parent_name) && !isAdminRole(e.child_name));
 
     const rolePermissions = {};
-    roles.forEach(role => {
-      const perms = this.getRoleDirectPermissions(role.id);
+    for (const role of roles) {
+      const perms = await this.getRoleDirectPermissions(role.id);
       rolePermissions[role.name] = perms.map(p => ({
         name: p.name,
         riskLevel: p.risk_level,
       }));
-    });
+    }
 
     return {
       nodes: roles.map(r => ({
         id: r.id,
         name: r.name,
         description: r.description,
-        isSystemRole: r.is_system_role === 1,
+        isSystemRole: Boolean(r.is_system_role),
         directPermissions: rolePermissions[r.name] || [],
       })),
       edges: edges.map(e => ({

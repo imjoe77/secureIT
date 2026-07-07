@@ -26,7 +26,7 @@ const TechStack = () => {
       title: "Database (The Vault)",
       icon: Database,
       items: [
-        { name: "SQLite", desc: "Relational storage with strict foreign key enforcement." },
+        { name: "PostgreSQL", desc: "Relational storage with strict foreign key enforcement and pooled connections." },
         { name: "Data Seeding", desc: "Pre-configured organizational hierarchies for multi-tenant simulation." },
         { name: "UUID Identifiers", desc: "Cryptographically strong IDs to prevent horizontal traversal attacks." }
       ]

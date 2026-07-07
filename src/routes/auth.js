@@ -40,7 +40,7 @@ setInterval(cleanExpiredNonces, 30_000);
  * Issues a one-time cryptographic nonce for fingerprint verification.
  * Client must compute SHA256(fingerprint + nonce) and send it with login.
  */
-router.get('/challenge', (req, res) => {
+router.get('/challenge', async (req, res) => {
   const nonce = crypto.randomBytes(32).toString('hex');
   nonceStore.set(nonce, { createdAt: Date.now(), used: false });
 
@@ -55,7 +55,7 @@ router.get('/challenge', (req, res) => {
  * POST /api/auth/login
  * Authenticate user and return JWT token
  */
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password, deviceFingerprint, challengeNonce, fingerprintResponse } = req.body;
 
   if (!username || !password) {
@@ -66,7 +66,7 @@ router.post('/login', (req, res) => {
   }
 
   const db = getConnection();
-  const user = db.prepare(`
+  const user = await db.prepare(`
     SELECT u.id, u.username, u.email, u.password_hash, u.tenant_id, u.is_active, t.name as tenant_name
     FROM users u
     JOIN tenants t ON u.tenant_id = t.id
@@ -96,7 +96,7 @@ router.post('/login', (req, res) => {
   }
 
   // Get user's roles
-  const roles = db.prepare(`
+  const roles = await db.prepare(`
     SELECT r.id, r.name, r.level FROM roles r
     JOIN user_roles ur ON r.id = ur.role_id
     WHERE ur.user_id = ?
@@ -112,9 +112,9 @@ router.post('/login', (req, res) => {
   // ═══════════════════════════════════════════════════
   // Check if any of the user's roles are restricted by device_lockdown rules.
   // If so, verify the requesting device's IP against the trusted_devices registry.
-  const deviceLockdownRules = db.prepare(`
+  const deviceLockdownRules = await db.prepare(`
     SELECT * FROM firewall_rules 
-    WHERE rule_type = 'device_lockdown' AND is_active = 1 
+    WHERE rule_type = 'device_lockdown' AND is_active = TRUE 
     AND (tenant_id IS NULL OR tenant_id = ?)
   `).all(user.tenant_id);
 
@@ -128,16 +128,16 @@ router.post('/login', (req, res) => {
 
     // User holds a restricted role — enforce device verification
     // Look up the requesting IP in the trusted_devices registry
-    const trustedDevice = db.prepare(`
+    const trustedDevice = await db.prepare(`
       SELECT * FROM trusted_devices 
-      WHERE role_id = ? AND is_active = 1 
+      WHERE role_id = ? AND is_active = TRUE 
       AND (ip_address = ? OR ip_address = ? OR ip_address = ?)
     `).get(matchedRole.id, clientIp, normalizedIp, `::ffff:${normalizedIp}`);
 
     if (!trustedDevice) {
       // BLOCKED: Unregistered device attempting high-command access
       // Log the blocked attempt to the audit trail
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -168,11 +168,11 @@ router.post('/login', (req, res) => {
 
     // Device verified — update last_used_at timestamp and track active device
     activeDeviceId = trustedDevice.id;
-    db.prepare('UPDATE trusted_devices SET last_used_at = ? WHERE id = ?')
+    await db.prepare('UPDATE trusted_devices SET last_used_at = ? WHERE id = ?')
       .run(new Date().toISOString(), trustedDevice.id);
 
     // LOG SUCCESS: Record that the device check passed
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
@@ -195,7 +195,7 @@ router.post('/login', (req, res) => {
   const sessionId = uuidv4();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // Default 24h
   
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO user_sessions (id, user_id, tenant_id, ip_address, user_agent, expires_at)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -247,7 +247,7 @@ router.post('/login', (req, res) => {
       // Mark nonce as used to prevent retry
       nonceEntry.used = true;
 
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO audit_log (id, user_id, tenant_id, requested_permission, decision, reason, ip_address, timestamp)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -298,7 +298,7 @@ router.post('/login', (req, res) => {
  * POST /api/auth/register
  * Register a new user (for demo purposes)
  */
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   const { username, email, password, tenantId } = req.body;
 
   if (!username || !email || !password || !tenantId) {
@@ -311,7 +311,7 @@ router.post('/register', (req, res) => {
   const db = getConnection();
 
   // Check tenant exists
-  const tenant = db.prepare('SELECT id, name FROM tenants WHERE id = ?').get(tenantId);
+  const tenant = await db.prepare('SELECT id, name FROM tenants WHERE id = ?').get(tenantId);
   if (!tenant) {
     return res.status(404).json({
       error: 'TENANT_NOT_FOUND',
@@ -320,7 +320,7 @@ router.post('/register', (req, res) => {
   }
 
   // Check username/email uniqueness
-  const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(username, email);
+  const existing = await db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(username, email);
   if (existing) {
     return res.status(409).json({
       error: 'USER_EXISTS',
@@ -331,7 +331,7 @@ router.post('/register', (req, res) => {
   const id = uuidv4();
   const passwordHash = bcrypt.hashSync(password, 10);
 
-  db.prepare('INSERT INTO users (id, username, email, password_hash, tenant_id) VALUES (?, ?, ?, ?, ?)').run(
+  await db.prepare('INSERT INTO users (id, username, email, password_hash, tenant_id) VALUES (?, ?, ?, ?, ?)').run(
     id, username, email, passwordHash, tenantId
   );
 
@@ -354,10 +354,10 @@ router.post('/register', (req, res) => {
  * GET /api/auth/me
  * Get current authenticated user profile
  */
-router.get('/me', authenticate, (req, res) => {
+router.get('/me', authenticate, async (req, res) => {
   const db = getConnection();
 
-  const roles = db.prepare(`
+  const roles = await db.prepare(`
     SELECT r.id, r.name, r.description, r.is_system_role
     FROM roles r
     JOIN user_roles ur ON r.id = ur.role_id
@@ -366,7 +366,7 @@ router.get('/me', authenticate, (req, res) => {
 
   const PermissionGraph = require('../engine/permissionGraph');
   const engine = new PermissionGraph();
-  const permMap = engine.getUserPermissionMap(req.user.id);
+  const permMap = await engine.getUserPermissionMap(req.user.id);
 
   res.json({
     user: req.user,
@@ -379,7 +379,7 @@ router.get('/me', authenticate, (req, res) => {
  * POST /api/auth/sudo
  * Elevate session to High-Risk Mode (Sudo) for 15 minutes
  */
-router.post('/sudo', authenticate, (req, res) => {
+router.post('/sudo', authenticate, async (req, res) => {
   const { password } = req.body;
 
   if (!password) {
@@ -387,7 +387,7 @@ router.post('/sudo', authenticate, (req, res) => {
   }
 
   const db = getConnection();
-  const user = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
+  const user = await db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user.id);
 
   const passwordValid = bcrypt.compareSync(password, user.password_hash);
   if (!passwordValid) {
@@ -396,7 +396,7 @@ router.post('/sudo', authenticate, (req, res) => {
 
   // Set sudo mode for 15 minutes
   const sudoUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  db.prepare('UPDATE user_sessions SET sudo_until = ? WHERE id = ?').run(sudoUntil, req.user.session.id);
+  await db.prepare('UPDATE user_sessions SET sudo_until = ? WHERE id = ?').run(sudoUntil, req.user.session.id);
 
   res.json({
     message: '🛡️ ELEVATION SUCCESSFUL: High-risk operations are now unlocked for 15 minutes.',

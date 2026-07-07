@@ -9,26 +9,26 @@ const router = express.Router();
 router.use(authenticate);
 
 // POST /api/permissions - Create permission
-router.post('/', firewall('manage:roles'), (req, res) => {
+router.post('/', firewall('manage:roles'), async (req, res) => {
   const { name, description, resource, action, riskLevel } = req.body;
   if (!name || !resource || !action) {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'name, resource, and action are required.' });
   }
   const risk = riskLevel || 'low';
   const db = getConnection();
-  const existing = db.prepare('SELECT id FROM permissions WHERE name = ?').get(name);
+  const existing = await db.prepare('SELECT id FROM permissions WHERE name = ?').get(name);
   if (existing) return res.status(409).json({ error: 'PERMISSION_EXISTS', message: `Permission '${name}' already exists.` });
 
   const id = uuidv4();
-  db.prepare('INSERT INTO permissions (id, name, description, resource, action, risk_level) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, description || null, resource, action, risk);
+  await db.prepare('INSERT INTO permissions (id, name, description, resource, action, risk_level) VALUES (?, ?, ?, ?, ?, ?)').run(id, name, description || null, resource, action, risk);
   res.status(201).json({ message: `Permission '${name}' created.`, permission: { id, name, resource, action, riskLevel: risk } });
 });
 
 // GET /api/permissions - List all
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const db = getConnection();
   // 🚩 SECURITY FIX: Only count assignments within the current tenant to prevent cross-tenant role leakage
-  const permissions = db.prepare(`
+  const permissions = await db.prepare(`
     SELECT p.id, p.name, p.description, p.resource, p.action, p.risk_level,
            COUNT(DISTINCT rp.role_id) as assigned_to_roles
     FROM permissions p 
@@ -40,40 +40,40 @@ router.get('/', (req, res) => {
 });
 
 // POST /api/permissions/assign - Assign permission to role
-router.post('/assign', firewall('manage:roles'), (req, res) => {
+router.post('/assign', firewall('manage:roles'), async (req, res) => {
   const { roleId, permissionId } = req.body;
   if (!roleId || !permissionId) return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'roleId and permissionId are required.' });
 
   const db = getConnection();
-  const role = db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(roleId);
+  const role = await db.prepare('SELECT id, name, tenant_id FROM roles WHERE id = ?').get(roleId);
   if (!role) return res.status(404).json({ error: 'ROLE_NOT_FOUND', message: 'Role does not exist.' });
   if (role.tenant_id !== req.user.tenantId) return res.status(403).json({ error: 'CROSS_TENANT_VIOLATION', message: 'Cannot assign permissions to roles in a different tenant.' });
 
-  const permission = db.prepare('SELECT id, name FROM permissions WHERE id = ?').get(permissionId);
+  const permission = await db.prepare('SELECT id, name FROM permissions WHERE id = ?').get(permissionId);
   if (!permission) return res.status(404).json({ error: 'PERMISSION_NOT_FOUND', message: 'Permission does not exist.' });
 
-  const existing = db.prepare('SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?').get(roleId, permissionId);
+  const existing = await db.prepare('SELECT 1 FROM role_permissions WHERE role_id = ? AND permission_id = ?').get(roleId, permissionId);
   if (existing) return res.status(409).json({ error: 'ALREADY_ASSIGNED', message: `Already assigned.` });
 
-  db.prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)').run(roleId, permissionId);
+  await db.prepare('INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)').run(roleId, permissionId);
   res.json({ message: `Permission '${permission.name}' assigned to role '${role.name}'.` });
 });
 
 // POST /api/permissions/check - Check access
-router.post('/check', (req, res) => {
+router.post('/check', async (req, res) => {
   const { permission, resourceTenantId } = req.body;
   if (!permission) return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'permission name is required.' });
 
   const engine = new PermissionGraph();
-  const result = engine.checkAccess(req.user.id, permission, resourceTenantId, { ip: req.ip });
+  const result = await engine.checkAccess(req.user.id, permission, resourceTenantId, { ip: req.ip });
   res.json({ check: { user: req.user.username, tenant: req.user.tenantName, permission, ...result } });
 });
 
 // GET /api/permissions/map - Full permission map
-router.get('/map', (req, res) => {
+router.get('/map', async (req, res) => {
   try {
     const engine = new PermissionGraph();
-    const permMap = engine.getUserPermissionMap(req.user.id);
+    const permMap = await engine.getUserPermissionMap(req.user.id);
     if (!permMap) return res.status(404).json({ error: 'USER_NOT_FOUND' });
 
     // The engine already provides categorized data and summary
@@ -85,7 +85,7 @@ router.get('/map', (req, res) => {
 });
 
 // POST /api/permissions/simulate-grant - Predict security impact
-router.post('/simulate-grant', (req, res) => {
+router.post('/simulate-grant', async (req, res) => {
   const { userId, roleId } = req.body;
   if (!userId || !roleId) {
     return res.status(400).json({ error: 'VALIDATION_ERROR', message: 'userId and roleId are required.' });
@@ -94,23 +94,23 @@ router.post('/simulate-grant', (req, res) => {
   const db = getConnection();
   
   // 🚩 SECURITY FIX: Verify target user belongs to the same tenant
-  const targetUser = db.prepare('SELECT tenant_id FROM users WHERE id = ?').get(userId);
+  const targetUser = await db.prepare('SELECT tenant_id FROM users WHERE id = ?').get(userId);
   if (!targetUser || targetUser.tenant_id !== req.user.tenantId) {
     return res.status(403).json({ error: 'TENANT_MISMATCH', message: 'Forbidden: Cannot simulate grants for users in a different tenant.' });
   }
 
   // 🚩 SECURITY FIX: Verify target role belongs to the same tenant
-  const targetRole = db.prepare('SELECT tenant_id FROM roles WHERE id = ?').get(roleId);
+  const targetRole = await db.prepare('SELECT tenant_id FROM roles WHERE id = ?').get(roleId);
   if (!targetRole || targetRole.tenant_id !== req.user.tenantId) {
     return res.status(403).json({ error: 'ROLE_MISMATCH', message: 'Forbidden: Cannot simulate grants for roles in a different tenant.' });
   }
 
   try {
     const engine = new PermissionGraph();
-    const simulation = engine.simulateUserGrant(userId, roleId);
+    const simulation = await engine.simulateUserGrant(userId, roleId);
     
     // Log the simulation to the audit trail
-    engine.recordAuditLog(
+    await engine.recordAuditLog(
       req.user.id, 
       req.user.tenantId, 
       'SIMULATE_GRANT', 
@@ -123,7 +123,7 @@ router.post('/simulate-grant', (req, res) => {
     console.error('Simulation Error:', err.message);
     
     const engine = new PermissionGraph();
-    engine.recordAuditLog(req.user.id, req.user.tenantId, 'SIMULATE_GRANT', 'DENY', `Simulation failure: ${err.message}`);
+    await engine.recordAuditLog(req.user.id, req.user.tenantId, 'SIMULATE_GRANT', 'DENY', `Simulation failure: ${err.message}`);
     
     res.status(err.message.includes('forbidden') ? 403 : 500).json({ 
       error: 'SIMULATION_ERROR', 

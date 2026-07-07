@@ -18,7 +18,7 @@ router.use(authenticate);
 //  LIVE ENGINE PERFORMANCE METRICS
 // ═══════════════════════════════════════════════════
 
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   const startTotal = process.hrtime.bigint();
 
   try {
@@ -26,27 +26,27 @@ router.get('/stats', (req, res) => {
     const engine = new PermissionGraph();
 
     // 1. Count graph nodes and edges
-    const roleCount = db.prepare('SELECT COUNT(*) as count FROM roles WHERE tenant_id = ?')
+    const roleCount = await db.prepare('SELECT COUNT(*) as count FROM roles WHERE tenant_id = ?')
       .get(req.user.tenantId);
-    const edgeCount = db.prepare(`
+    const edgeCount = await db.prepare(`
       SELECT COUNT(*) as count FROM role_hierarchy rh
       JOIN roles r ON rh.parent_role_id = r.id
       WHERE r.tenant_id = ?
     `).get(req.user.tenantId);
-    const permissionCount = db.prepare('SELECT COUNT(*) as count FROM permissions').get();
-    const auditCount = db.prepare('SELECT COUNT(*) as count FROM audit_log WHERE tenant_id = ?')
+    const permissionCount = await db.prepare('SELECT COUNT(*) as count FROM permissions').get();
+    const auditCount = await db.prepare('SELECT COUNT(*) as count FROM audit_log WHERE tenant_id = ?')
       .get(req.user.tenantId);
 
     // 2. Benchmark a live graph traversal
     const traversalStart = process.hrtime.bigint();
-    const roleGraph = engine.buildRoleGraph(req.user.tenantId);
+    const roleGraph = await engine.buildRoleGraph(req.user.tenantId);
 
     // Traverse from every root to measure real performance
-    const roles = db.prepare('SELECT id FROM roles WHERE tenant_id = ?').all(req.user.tenantId);
+    const roles = await db.prepare('SELECT id FROM roles WHERE tenant_id = ?').all(req.user.tenantId);
     let totalPermissionsEvaluated = 0;
 
     for (const role of roles) {
-      const perms = engine.bfsTraversePermissions(role.id, roleGraph);
+      const perms = await engine.bfsTraversePermissions(role.id, roleGraph);
       totalPermissionsEvaluated += perms.size;
     }
 
