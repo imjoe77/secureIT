@@ -564,7 +564,7 @@ See the LICENSE file for details. MIT License Template: https://opensource.org/l
 
 **Nathaniel Bandi**
 
-GitHub: https://github.com/imjoe77
+GitHub: https://github.com/imjoe77 <br>
 Website : https://secureit-backend-6y6k.onrender.com
 
 ---
