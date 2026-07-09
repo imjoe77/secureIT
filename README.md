@@ -1,5 +1,5 @@
 <h1 align="center">
-# 🛡️ SecureIT
+ 🛡️ SecureIT
 </h1>
 <img src="./public/cover.png" alt="SEcureIT Banner" />
 <div align="center">
