@@ -556,7 +556,12 @@ Contributions are welcome.
 
 Licensed under the MIT License.
 
-See the LICENSE file for details. MIT License Template: https://opensource.org/licenses/MIT
+
+See the [LICENSE](LICENSE) file for details.
+
+MIT License Template:
+https://opensource.org/licenses/MIT
+
 
 ---
 
