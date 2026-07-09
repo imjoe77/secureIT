@@ -180,9 +180,6 @@ Higher ranks inherit permissions from lower ranks while remaining protected by f
 
 <img src="./public/architecture.png" alt="SecureIT Architecture" />
 
-```text
-docs/images/system-architecture.png
-```
 
 ```
 Client
