@@ -1,6 +1,7 @@
-
+<h1 align="center">
 # 🛡️ SecureIT
-
+</h1>
+<img src="./public/cover.png" alt="SEcureIT Banner" />
 <div align="center">
 
 ### Military-Inspired Zero-Trust Security Subsystem
@@ -177,7 +178,7 @@ Higher ranks inherit permissions from lower ranks while remaining protected by f
 
 # 🏗 System Architecture
 
-> Replace with your architecture image.
+<img src="./public/architecture.png" alt="SecureIT Architecture" />
 
 ```text
 docs/images/system-architecture.png
